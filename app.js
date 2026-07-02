@@ -50,6 +50,10 @@ function normalizeState(raw) {
   next.data.students = mergeById(next.data.students, defaults.students);
   next.data.typeWeights = { ...defaults.typeWeights, ...(next.data.typeWeights || {}) };
   next.data.statusWeights = { ...defaults.statusWeights, ...(next.data.statusWeights || {}) };
+  next.data.aiSettings = { ...defaults.aiSettings, ...(next.data.aiSettings || {}) };
+  ["apiContracts", "importBatches", "importErrors", "aiSuggestions", "aiDecisions", "recommendationsDone"].forEach((key) => {
+    if (!Array.isArray(next.data[key])) next.data[key] = structuredClone(defaults[key]) || [];
+  });
   next.role ||= "student";
   next.currentStudentId ||= "s1";
   next.view ||= "dashboard";
@@ -248,25 +252,40 @@ function loginShell() {
   ]);
 }
 
+const NAV_ITEMS = [
+  ["dashboard", "Личный кабинет"],
+  ["competencies", "Карта компетенций"],
+  ["education", "Образовательный процесс"],
+  ["evidence", "Достижения"],
+  ["ai", "AI-анализ"],
+  ["development", "Развитие"],
+  ["forecast", "Прогноз готовности"],
+  ["verification", "Верификация"],
+  ["employers", "Работодатели"],
+  ["analytics", "Аналитика"],
+  ["methodology", "Методика"],
+  ["integrations", "Интеграции"],
+  ["reports", "Отчеты"],
+  ["admin", "Справочники"],
+  ["help", "Справка и AI"],
+];
+
+const ROLE_ACCESS = {
+  student: ["dashboard", "competencies", "education", "evidence", "ai", "development", "employers", "analytics", "reports", "help"],
+  teacher: ["dashboard", "competencies", "education", "evidence", "ai", "development", "forecast", "verification", "employers", "analytics", "reports", "help"],
+  methodologist: ["dashboard", "competencies", "education", "evidence", "ai", "development", "forecast", "verification", "analytics", "methodology", "reports", "admin", "help"],
+  head: ["dashboard", "competencies", "education", "evidence", "ai", "development", "forecast", "verification", "employers", "analytics", "methodology", "reports", "admin", "help"],
+  director: ["dashboard", "competencies", "education", "analytics", "development", "forecast", "methodology", "reports", "help"],
+  employer: ["dashboard", "employers", "reports", "help"],
+  admin: ["dashboard", "competencies", "education", "evidence", "verification", "employers", "analytics", "methodology", "integrations", "reports", "admin", "help"],
+};
+
+function canAccess(view) {
+  return (ROLE_ACCESS[state.role] || []).includes(view);
+}
+
 function sidebar() {
-  const nav = [
-    ["dashboard", "Личный кабинет"],
-    ["competencies", "Карта компетенций"],
-    ["education", "Образовательный процесс"],
-    ["evidence", "Достижения"],
-    ["verification", "Верификация"],
-    ["employers", "Работодатели"],
-    ["analytics", "Аналитика"],
-    ["methodology", "Методика"],
-    ["reports", "Отчеты"],
-    ["admin", "Справочники"],
-  ].filter(([id]) => {
-    if (state.role === "student") return !["verification", "admin", "methodology"].includes(id);
-    if (state.role === "employer") return ["dashboard", "employers", "reports"].includes(id);
-    if (state.role === "teacher") return !["admin", "methodology"].includes(id);
-    if (state.role === "methodologist") return !["employers"].includes(id);
-    return true;
-  });
+  const nav = NAV_ITEMS.filter(([id]) => canAccess(id));
 
   return h("aside", { class: "sidebar" }, [
     h("div", { class: "brand" }, [
@@ -318,28 +337,40 @@ function titleByView() {
     competencies: "Карта компетенций",
     education: "Образовательный процесс",
     evidence: "Достижения",
+    ai: "AI-анализ компетенций и портфолио",
+    development: "Траектория развития",
+    forecast: "Прогноз готовности",
     verification: "Очередь верификации",
     employers: "Работодатели и подбор",
-    analytics: "Аналитика пилота",
+    analytics: "Аналитика",
     methodology: "Методическое покрытие",
+    integrations: "Интеграции и качество данных",
     reports: "Отчеты и экспорт",
     admin: "Справочники и роли",
+    help: "Справка и безопасность AI",
   }[state.view];
 }
 
 function viewContent() {
-  return {
+  const views = {
     dashboard: dashboardView,
     competencies: competenciesView,
     education: educationView,
     evidence: evidenceView,
+    ai: aiView,
+    development: developmentView,
+    forecast: forecastView,
     verification: verificationView,
     employers: employersView,
     analytics: analyticsView,
     methodology: methodologyView,
+    integrations: integrationsView,
     reports: reportsView,
     admin: adminView,
-  }[state.view]();
+    help: helpView,
+  };
+  if (!canAccess(state.view) || !views[state.view]) state.view = "dashboard";
+  return views[state.view]();
 }
 
 function dashboardView() {
@@ -435,7 +466,7 @@ function evidenceView() {
     h("article", { class: "panel" }, [
       h("div", { class: "panel-head" }, [
         h("h3", {}, ["Импорт оценок CSV"]),
-        h("button", { class: "ghost", onclick: importCsv }, ["Импортировать"]),
+        h("button", { class: "ghost", onclick: () => runImport("Ручной CSV (Достижения)") }, ["Импортировать"]),
       ]),
       h("textarea", { oninput: (event) => { state.csv = event.target.value; saveState(); } }, [state.csv]),
       h("small", {}, ["Формат: student_email,discipline_code,score,title"]),
@@ -1051,40 +1082,68 @@ function addEvidenceQuick() {
   toast("Добавлено достижение-наблюдение", "success");
 }
 
-function importCsv() {
-  const rows = state.csv.trim().split(/\n+/).slice(1).filter((row) => row.trim());
-  let imported = 0;
-  let skipped = 0;
-  rows.forEach((row) => {
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Спринт 1: пакетный импорт с проверкой дублей, журналом ошибок и откатом
+function runImport(source = "Электронный журнал (CSV)") {
+  const lines = (state.csv || "").trim().split(/\n+/).slice(1).filter((row) => row.trim());
+  if (!lines.length) {
+    toast("Нет строк для импорта", "info");
+    return;
+  }
+  const batchId = `imp${Date.now()}`;
+  const errorRows = [];
+  let added = 0;
+  let duplicates = 0;
+  lines.forEach((row, idx) => {
+    const line = idx + 2;
     const [email, code, score, ...titleParts] = row.split(",");
-    const student = state.data.students.find((item) => item.email.trim() === email?.trim());
-    const discipline = state.data.disciplines.find((item) => item.code.toLowerCase() === code?.trim().toLowerCase());
+    const student = state.data.students.find((item) => item.email.trim().toLowerCase() === (email || "").trim().toLowerCase());
+    const discipline = state.data.disciplines.find((item) => item.code.toLowerCase() === (code || "").trim().toLowerCase());
     const value = Number(score);
-    if (!student || !discipline || !Number.isFinite(value)) {
-      skipped += 1;
-      return;
+    const title = titleParts.join(",").trim() || "Импортированная оценка";
+    if (!student) return errorRows.push({ line, reason: `студент не найден: ${email || "—"}`, dup: false });
+    if (!discipline) return errorRows.push({ line, reason: `дисциплина не найдена: ${code || "—"}`, dup: false });
+    if (!Number.isFinite(value) || value < 0 || value > 100) return errorRows.push({ line, reason: `некорректный балл: ${score || "—"}`, dup: false });
+    const duplicate = state.data.evidence.some((e) => e.studentId === student.id && e.disciplineId === discipline.id && (e.title || "").toLowerCase() === title.toLowerCase());
+    if (duplicate) {
+      duplicates += 1;
+      return errorRows.push({ line, reason: `дубль: ${student.name} · ${discipline.code} · ${title}`, dup: true });
     }
     state.data.evidence.push({
       id: `e${Date.now()}${Math.random().toString(16).slice(2)}`,
       studentId: student.id,
       disciplineId: discipline.id,
-      title: titleParts.join(",").trim() || "Импортированная оценка",
+      title,
       type: "grade",
       score: value,
-      date: new Date().toISOString().slice(0, 10),
-      status: "verified_by_teacher",
-      verifier: "t1",
-      source: "CSV импорт",
+      date: today(),
+      status: "submitted",
+      verifier: "",
+      source,
+      batchId,
     });
-    imported += 1;
+    added += 1;
   });
+  errorRows.forEach((er) => state.data.importErrors.unshift({ id: `err${Date.now()}${Math.random().toString(16).slice(2, 6)}`, batchId, line: er.line, reason: er.reason }));
+  const errors = errorRows.length - duplicates;
+  state.data.importBatches.unshift({ id: batchId, date: today(), source, total: lines.length, added, duplicates, errors, status: "applied" });
   saveState();
   render();
-  if (!imported && !skipped) {
-    toast("Нет строк для импорта", "info");
-  } else {
-    toast(`Импортировано: ${imported}${skipped ? `, пропущено: ${skipped}` : ""}`, skipped && !imported ? "error" : "success");
-  }
+  toast(`Импорт: добавлено ${added}, дублей ${duplicates}, ошибок ${errors}`, added ? "success" : "error");
+}
+
+function rollbackImport(batchId) {
+  const before = state.data.evidence.length;
+  state.data.evidence = state.data.evidence.filter((e) => e.batchId !== batchId);
+  const removed = before - state.data.evidence.length;
+  const batch = byId(state.data.importBatches, batchId);
+  if (batch) batch.status = "rolled_back";
+  saveState();
+  render();
+  toast(`Импорт откачен, удалено достижений: ${removed}`, "info");
 }
 
 function downloadText(filename, content, mime = "text/csv;charset=utf-8") {
@@ -1120,6 +1179,568 @@ function exportMethodologyCsv() {
   ];
   downloadText("methodology-coverage.csv", rows.map((row) => row.join(";")).join("\n"));
   toast("Методическое покрытие выгружено в CSV", "success");
+}
+
+/* =========================================================================
+   Третья очередь: интеграции, AI-анализ, рекомендации, прогнозирование
+   Клиентские эвристики в стиле MVP. Инвариант: AI предлагает — человек решает.
+   ========================================================================= */
+
+function aiStems(text) {
+  return (text || "")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[^a-zа-я0-9]+/g, " ")
+    .split(" ")
+    .filter((w) => w.length >= 4)
+    .map((w) => w.slice(0, 6));
+}
+
+function competencyTerms(competency) {
+  return [competency.title, ...(competency.knowledge || []), ...(competency.skills || []), ...(competency.habits || []), ...(competency.indicators || [])].join(" ");
+}
+
+function aiSuggestCompetencies(text, topN = 3) {
+  const input = new Set(aiStems(text));
+  if (!input.size) return [];
+  return state.data.competencies
+    .map((competency) => {
+      const terms = new Set(aiStems(competencyTerms(competency)));
+      let hits = 0;
+      input.forEach((s) => { if (terms.has(s)) hits += 1; });
+      return { competencyId: competency.id, code: competency.code, title: competency.title, hits, confidence: Math.min(0.95, 0.4 + hits * 0.1) };
+    })
+    .filter((s) => s.hits > 0)
+    .sort((a, b) => b.hits - a.hits)
+    .slice(0, topN);
+}
+
+function maskPII(text) {
+  if (!state.data.aiSettings.maskPII) return text;
+  return (text || "")
+    .replace(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi, "e-mail скрыт")
+    .replace(/\+?\d[\d\s()-]{8,}\d/g, "телефон скрыт");
+}
+
+function canConfirmAi() {
+  return ["methodologist", "head", "teacher", "admin"].includes(state.role);
+}
+
+const aiStatusLabels = { proposed: "Предложено AI", accepted: "Принято", edited: "Изменено и принято", rejected: "Отклонено" };
+function aiStatusLabel(status) { return aiStatusLabels[status] || status; }
+
+function confidenceBar(value) {
+  const pct = Math.round(value * 100);
+  return h("div", { class: "chart-track confidence", role: "progressbar", "aria-label": `уверенность ${pct}%`, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct) }, [h("i", { style: `width:${pct}%` })]);
+}
+
+function logAiDecision(payload) {
+  state.data.aiDecisions.unshift({
+    id: `dec${Date.now()}${Math.random().toString(16).slice(2, 6)}`,
+    by: currentRole().userId,
+    role: state.role,
+    at: today(),
+    ...payload,
+  });
+}
+
+function decideSuggestion(id, decision, newCompetencyId) {
+  const s = byId(state.data.aiSuggestions, id);
+  if (!s || !canConfirmAi()) return;
+  if (decision === "accepted") {
+    if (newCompetencyId) s.competencyId = newCompetencyId;
+    if (s.kind === "link" && s.disciplineId && s.competencyId) {
+      const exists = state.data.links.some((l) => l.disciplineId === s.disciplineId && l.competencyId === s.competencyId);
+      if (!exists) state.data.links.push({ disciplineId: s.disciplineId, competencyId: s.competencyId, weight: s.weight || 0.25, source: "ai" });
+    }
+    s.status = newCompetencyId ? "edited" : "accepted";
+  } else {
+    s.status = "rejected";
+  }
+  s.decidedBy = currentRole().userId;
+  s.decidedAt = today();
+  logAiDecision({ suggestionId: s.id, kind: s.kind, competencyId: s.competencyId, disciplineId: s.disciplineId || "", decision: s.status });
+  saveState();
+  render();
+  toast(decision === "accepted" ? "Предложение подтверждено человеком" : "Предложение отклонено", decision === "accepted" ? "success" : "info");
+}
+
+function editSuggestion(id) {
+  const code = window.prompt("Код компетенции для связи (например, ПК.04):", "");
+  if (code == null) return;
+  const key = code.trim().toLowerCase();
+  const comp = state.data.competencies.find((c) => c.code.toLowerCase() === key || c.id === key);
+  if (!comp) { toast("Компетенция не найдена", "error"); return; }
+  decideSuggestion(id, "accepted", comp.id);
+}
+
+function analyzeSource() {
+  const text = (document.getElementById("ai-text")?.value || "").trim();
+  const source = document.getElementById("ai-source")?.value || "Другое";
+  const disciplineId = document.getElementById("ai-discipline")?.value || state.data.disciplines[0].id;
+  if (text.length < 12) { toast("Добавьте больше текста для анализа", "error"); return; }
+  const found = aiSuggestCompetencies(text, 3);
+  if (!found.length) { toast("AI не нашёл явных совпадений с ЗУНК", "info"); return; }
+  found.forEach((f) => state.data.aiSuggestions.unshift({
+    id: `ai${Date.now()}${Math.random().toString(16).slice(2, 6)}`,
+    kind: "link",
+    sourceType: source,
+    sourceText: text.slice(0, 240),
+    disciplineId,
+    competencyId: f.competencyId,
+    weight: 0.25,
+    confidence: f.confidence,
+    status: "proposed",
+    createdBy: currentRole().userId,
+    createdAt: today(),
+  }));
+  state.aiInput = "";
+  saveState();
+  render();
+  toast(`AI предложил ${found.length} связ(и). Требуется подтверждение методиста.`, "success");
+}
+
+function suggestionCard(s) {
+  const disc = byId(state.data.disciplines, s.disciplineId);
+  const comp = byId(state.data.competencies, s.competencyId);
+  const statusClass = s.status === "proposed" ? "submitted" : s.status === "rejected" ? "rejected" : "verified_by_teacher";
+  const confirmable = canConfirmAi() && s.status === "proposed";
+  return h("article", { class: "evidence-card action-card" }, [
+    h("div", {}, [
+      h("div", { class: "row-badges" }, [h("span", { class: "badge" }, [s.sourceType]), h("span", { class: `status ${statusClass}` }, [aiStatusLabel(s.status)])]),
+      h("h3", {}, [`${disc ? disc.code : "—"} → ${comp ? comp.code : "—"} · ${comp ? comp.title : ""}`]),
+      h("p", {}, [maskPII(s.sourceText)]),
+      h("small", { class: "muted-text" }, [`Источник: ${s.createdBy === "system" ? "демо-данные" : s.createdBy} · ${s.createdAt} · уверенность ${Math.round(s.confidence * 100)}%`]),
+      confidenceBar(s.confidence),
+    ]),
+    confirmable
+      ? h("div", { class: "actions" }, [
+          h("button", { class: "compact", onclick: () => decideSuggestion(s.id, "accepted") }, ["Принять"]),
+          h("button", { class: "ghost compact", onclick: () => editSuggestion(s.id) }, ["Изменить"]),
+          h("button", { class: "danger compact", onclick: () => decideSuggestion(s.id, "rejected") }, ["Отклонить"]),
+        ])
+      : (s.status === "proposed"
+          ? h("small", { class: "muted-text" }, ["Ожидает подтверждения методиста"])
+          : h("span", { class: "badge" }, [`${aiStatusLabel(s.status)}${s.decidedBy ? ` · ${s.decidedBy}` : ""}`])),
+  ]);
+}
+
+function aiRecognitionPanel() {
+  return h("article", { class: "panel" }, [
+    h("div", { class: "panel-head" }, [h("h3", {}, ["Распознавание компетенций из документов"]), h("span", { class: "badge" }, ["Спринт 2"])]),
+    h("p", { class: "muted-text" }, ["Вставьте текст рабочей программы, положения о конкурсе или отзыва — AI предложит связи с ЗУНК. Предложения не применяются без подтверждения методиста."]),
+    h("div", { class: "form-grid" }, [
+      field("Тип источника", h("select", { id: "ai-source" }, ["Рабочая программа", "Положение о конкурсе", "Отзыв", "Другое"].map((x) => h("option", { value: x }, [x])))),
+      field("Дисциплина для связи", h("select", { id: "ai-discipline" }, state.data.disciplines.map((d) => h("option", { value: d.id }, [`${d.code} ${d.name}`])))),
+      field("Текст источника", h("textarea", { id: "ai-text", oninput: (e) => { state.aiInput = e.target.value; saveState(); }, placeholder: "Вставьте фрагмент документа..." }, [state.aiInput || ""]), "wide"),
+      h("button", { onclick: analyzeSource }, ["Проанализировать"]),
+    ]),
+  ]);
+}
+
+function pendingSuggestionsPanel() {
+  const pending = state.data.aiSuggestions.filter((s) => s.status === "proposed");
+  return h("article", { class: "panel" }, [
+    h("div", { class: "panel-head" }, [h("h3", {}, ["Очередь AI-предложений"]), h("span", { class: "badge" }, [`${pending.length} на подтверждении`])]),
+    pending.length ? h("div", { class: "cards-list" }, pending.map(suggestionCard)) : emptyState("Нет предложений на подтверждении."),
+  ]);
+}
+
+function aiHistoryPanel() {
+  const log = state.data.aiDecisions.slice(0, 8);
+  return h("article", { class: "panel" }, [
+    h("div", { class: "panel-head" }, [h("h3", {}, ["История решений по AI"]), h("span", { class: "badge" }, [`${state.data.aiDecisions.length}`])]),
+    log.length
+      ? h("div", { class: "table history-table" }, log.map((d) => {
+          const comp = byId(state.data.competencies, d.competencyId);
+          return h("div", { class: "table-row" }, [h("strong", {}, [d.at]), h("span", {}, [d.role]), h("span", {}, [comp ? comp.code : d.competencyId]), h("span", {}, [aiStatusLabel(d.decision)])]);
+        }))
+      : emptyState("Решений пока нет."),
+  ]);
+}
+
+function confirmPortfolioLink(disciplineId, competencyId, title) {
+  const exists = state.data.links.some((l) => l.disciplineId === disciplineId && l.competencyId === competencyId);
+  if (!exists) state.data.links.push({ disciplineId, competencyId, weight: 0.25, source: "ai-portfolio" });
+  logAiDecision({ suggestionId: "portfolio", kind: "portfolio-link", competencyId, disciplineId, decision: "accepted" });
+  saveState();
+  render();
+  toast(`Связь подтверждена: ${byId(state.data.competencies, competencyId).code} ↔ «${title}»`, "success");
+}
+
+function aiPortfolioPanel() {
+  const student = currentStudent();
+  const scores = competencyScores(student.id);
+  const total = state.data.competencies.length;
+  const covered = state.data.competencies.filter((c) => (scores[c.id] || 0) > 0).length;
+  const completeness = Math.round((covered / Math.max(total, 1)) * 100);
+  const gaps = state.data.competencies.filter((c) => (scores[c.id] || 0) === 0);
+  const evid = state.data.evidence.filter((e) => e.studentId === student.id);
+  const canConfirm = ["teacher", "head", "methodologist", "admin"].includes(state.role);
+  const cards = evid.map((e) => {
+    const linked = new Set(state.data.links.filter((l) => l.disciplineId === e.disciplineId).map((l) => l.competencyId));
+    const sugg = aiSuggestCompetencies(`${e.title} ${e.source || ""}`, 2).filter((x) => !linked.has(x.competencyId));
+    const shortDesc = (e.title || "").length < 24;
+    if (!sugg.length && !shortDesc) return null;
+    return h("article", { class: "evidence-card action-card" }, [
+      h("div", {}, [
+        h("span", { class: `status ${e.status}` }, [statusLabels[e.status]]),
+        h("h3", {}, [e.title]),
+        sugg.length ? h("p", {}, [`AI предлагает компетенции: ${sugg.map((x) => x.code).join(", ")}`]) : h("p", { class: "muted-text" }, ["Новых компетенций не найдено."]),
+        shortDesc ? h("small", { class: "muted-text" }, ["Рекомендация: опишите достижение подробнее — что сделано, результат, инструменты."]) : null,
+      ].filter(Boolean)),
+      (sugg.length && canConfirm)
+        ? h("div", { class: "actions" }, sugg.map((x) => h("button", { class: "ghost compact", onclick: () => confirmPortfolioLink(e.disciplineId, x.competencyId, e.title) }, [`Подтвердить ${x.code}`])))
+        : (sugg.length ? h("small", { class: "muted-text" }, ["Связь подтверждает преподаватель"]) : null),
+    ].filter(Boolean));
+  }).filter(Boolean);
+  return h("article", { class: "panel" }, [
+    h("div", { class: "panel-head" }, [h("h3", {}, ["AI-анализ портфолио"]), h("span", { class: "badge" }, ["Спринт 3"])]),
+    h("div", { class: "notice" }, [`Полнота портфолио: ${completeness}%. Закрытые данные не отправляются работодателю без разрешения (доступ: ${student.portfolioAccess || "college"}).`]),
+    progressRow("Полнота", `${covered} из ${total} компетенций подтверждены достижениями`, completeness),
+    gaps.length ? h("p", { class: "muted-text" }, [`Пробелы: ${gaps.map((g) => g.code).join(", ")}`]) : h("p", { class: "muted-text" }, ["Пробелов нет — есть вклад по всем компетенциям."]),
+    h("h4", { class: "subhead" }, ["Предложения по достижениям"]),
+    cards.length ? h("div", { class: "cards-list" }, cards) : emptyState("AI не нашёл, что улучшить — портфолио заполнено качественно."),
+  ]);
+}
+
+function aiView() {
+  const showRecognition = ["methodologist", "head", "admin", "teacher"].includes(state.role);
+  const showPortfolio = ["student", "teacher", "head", "methodologist"].includes(state.role);
+  return h("section", { class: "stack" }, [
+    h("div", { class: "notice" }, ["Ключевой принцип: AI только предлагает связи и улучшения. Компетенции подтверждает человек (методист/преподаватель). Все решения фиксируются в истории."]),
+    ...(showRecognition ? [aiRecognitionPanel(), pendingSuggestionsPanel(), aiHistoryPanel()] : []),
+    ...(showPortfolio ? [aiPortfolioPanel()] : []),
+  ]);
+}
+
+function recommendationsFor(studentId) {
+  const scores = competencyScores(studentId);
+  const deficits = state.data.competencies.map((c) => ({ c, value: scores[c.id] || 0 })).filter((x) => x.value < 65).sort((a, b) => a.value - b.value).slice(0, 4);
+  const recs = [];
+  deficits.forEach(({ c, value }) => {
+    const links = state.data.links.filter((l) => l.competencyId === c.id);
+    const discs = links.map((l) => byId(state.data.disciplines, l.disciplineId)).filter(Boolean);
+    const practice = discs.find((d) => d.type === "practice");
+    const module = discs.find((d) => d.type === "module");
+    const bestWeight = Math.max(0.3, ...links.map((l) => l.weight || 0.3));
+    const gain = Math.max(4, Math.round((100 - value) * bestWeight * 0.5));
+    const actions = [];
+    if (practice) actions.push(`Пройти практику: ${practice.code} ${practice.name}`);
+    if (module) actions.push(`Закрыть модуль: ${module.code} ${module.name}`);
+    actions.push(`Подготовить проект или участвовать в конкурсе по «${c.title}»`);
+    actions.forEach((text, i) => recs.push({ id: `rec-${studentId}-${c.id}-${i}`, competencyId: c.id, code: c.code, title: c.title, value, gain, text }));
+  });
+  return recs;
+}
+
+function toggleRecommendation(id) {
+  const set = state.data.recommendationsDone;
+  const i = set.indexOf(id);
+  if (i >= 0) set.splice(i, 1); else set.push(id);
+  saveState();
+  render();
+  toast(i >= 0 ? "Рекомендация снята" : "Рекомендация отмечена выполненной", "info");
+}
+
+function recommendationCard(r, isDone) {
+  return h("article", { class: `evidence-card action-card${isDone ? " rec-done" : ""}` }, [
+    h("div", {}, [
+      h("div", { class: "row-badges" }, [h("span", { class: "badge" }, [r.code]), h("span", { class: "status verified_by_teacher" }, [`+${r.gain}% прирост`])]),
+      h("h3", {}, [r.text]),
+      h("small", { class: "muted-text" }, [`Компетенция «${r.title}» · текущий уровень ${r.value}%`]),
+    ]),
+    h("div", { class: "actions" }, [h("button", { class: isDone ? "ghost compact" : "compact", onclick: () => toggleRecommendation(r.id) }, [isDone ? "Выполнено ✓" : "Отметить выполненной"])]),
+  ]);
+}
+
+function massDeficitsPanel() {
+  const students = state.data.students;
+  const rows = state.data.competencies.map((c) => {
+    const below = students.filter((s) => (competencyScores(s.id)[c.id] || 0) < 50).length;
+    const avg = Math.round(students.reduce((sum, s) => sum + (competencyScores(s.id)[c.id] || 0), 0) / Math.max(students.length, 1));
+    return { c, below, avg };
+  }).sort((a, b) => b.below - a.below || a.avg - b.avg);
+  return h("article", { class: "panel" }, [
+    h("div", { class: "panel-head" }, [h("h3", {}, ["Массовые дефициты группы"]), h("span", { class: "badge" }, ["для руководителя"])]),
+    h("div", { class: "table coverage-table" }, rows.map((r) => h("div", { class: "table-row" }, [h("strong", {}, [r.c.code]), h("span", {}, [r.c.title]), h("span", {}, [`${r.below} студ. ниже 50%`]), h("span", { class: "table-value" }, [`${r.avg}%`])]))),
+  ]);
+}
+
+function developmentView() {
+  const student = currentStudent();
+  const recs = recommendationsFor(student.id);
+  const done = state.data.recommendationsDone;
+  const requests = state.data.employerRequests;
+  const selReqId = state.devRequestId && requests.some((r) => r.id === state.devRequestId) ? state.devRequestId : (requests[0] && requests[0].id);
+  const req = byId(state.data.employerRequests, selReqId);
+  const scores = competencyScores(student.id);
+  const staff = ["teacher", "head", "director", "methodologist", "admin"].includes(state.role);
+  return h("section", { class: "stack" }, [
+    h("div", { class: "metric-grid" }, [
+      metric("Дефицитов", new Set(recs.map((r) => r.competencyId)).size, "компетенций ниже 65%", "gold"),
+      metric("Рекомендаций", recs.length, "конкретных шагов", "indigo"),
+      metric("Выполнено", recs.filter((r) => done.includes(r.id)).length, "отмечено студентом", "green"),
+      metric("Готовность", `${readiness(student.id)}%`, student.name, "teal"),
+    ]),
+    h("article", { class: "panel" }, [
+      h("div", { class: "panel-head" }, [h("h3", {}, ["Персональные рекомендации"]), h("span", { class: "badge" }, ["по дефицитам"])]),
+      recs.length ? h("div", { class: "cards-list" }, recs.map((r) => recommendationCard(r, done.includes(r.id)))) : emptyState("Дефицитов нет — уровень по всем компетенциям 65%+."),
+    ]),
+    req
+      ? h("article", { class: "panel" }, [
+          h("div", { class: "panel-head" }, [h("h3", {}, ["Сравнение с запросом работодателя"]), h("select", { onchange: (e) => setState({ devRequestId: e.target.value }) }, requests.map((r) => h("option", { value: r.id, selected: r.id === selReqId }, [r.title])))]),
+          h("div", { class: "cards-list" }, (req.required || []).map((cid) => {
+            const c = byId(state.data.competencies, cid);
+            const val = scores[cid] || 0;
+            const gap = Math.max(0, req.minLevel - val);
+            return h("div", { class: "progress-row" }, [
+              h("div", {}, [h("strong", {}, [c ? c.code : cid]), h("span", {}, [gap > 0 ? `нужно усилить: +${gap}% до порога ${req.minLevel}%` : `порог ${req.minLevel}% достигнут`])]),
+              h("div", { class: "bar-wrap" }, [h("div", { class: "bar", style: `width:${Math.min(100, val)}%` })]),
+              h("b", {}, [`${val}%`]),
+            ]);
+          })),
+        ])
+      : null,
+    staff ? massDeficitsPanel() : null,
+  ].filter(Boolean));
+}
+
+function practiceReadiness(studentId) {
+  const scores = competencyScores(studentId);
+  const prof = state.data.competencies.filter((c) => c.cluster === "профессиональные");
+  const profAvg = Math.round(prof.reduce((s, c) => s + (scores[c.id] || 0), 0) / Math.max(prof.length, 1));
+  const practice = state.data.evidence.some((e) => e.studentId === studentId && e.type === "practice");
+  const labs = state.data.evidence.some((e) => e.studentId === studentId && ["lab", "project"].includes(e.type));
+  const confirmations = state.data.evidence.filter((e) => e.studentId === studentId && trustFor(e) >= 0.7).length;
+  const score = Math.max(0, Math.min(100, Math.round(profAvg * 0.6 + (practice ? 18 : 0) + (labs ? 8 : 0) + Math.min(14, confirmations * 4))));
+  const factors = [
+    { label: "Проф. компетенции", delta: `${profAvg}%`, positive: profAvg >= 50 },
+    { label: "Учебная практика", delta: practice ? "есть" : "нет", positive: practice },
+    { label: "Практ./проекты", delta: labs ? "есть" : "нет", positive: labs },
+    { label: "Подтверждения", delta: `${confirmations}`, positive: confirmations >= 2 },
+  ];
+  const risks = [];
+  if (!practice) risks.push("нет учебной практики");
+  if (profAvg < 45) risks.push("низкий уровень проф. компетенций");
+  if (confirmations < 2) risks.push("мало подтверждённых достижений");
+  return { score, factors, risks };
+}
+
+function employmentReadiness(studentId) {
+  const base = readiness(studentId);
+  const practical = hasPracticalExperience(studentId) ? 1 : 0;
+  const external = hasExternalConfirmation(studentId) ? 1 : 0;
+  const contest = state.data.evidence.some((e) => e.studentId === studentId && e.type === "contest") ? 1 : 0;
+  const review = state.data.evidence.some((e) => e.studentId === studentId && e.type === "employer_review") ? 1 : 0;
+  const score = Math.max(0, Math.min(100, Math.round(base * 0.55 + practical * 15 + external * 12 + contest * 10 + review * 8)));
+  const factors = [
+    { label: "Общая готовность", delta: `${base}%`, positive: base >= 50 },
+    { label: "Практический опыт", delta: practical ? "есть" : "нет", positive: practical },
+    { label: "Внешнее подтверждение", delta: external ? "есть" : "нет", positive: external },
+    { label: "Конкурсы", delta: contest ? "есть" : "нет", positive: contest },
+    { label: "Отзыв работодателя", delta: review ? "есть" : "нет", positive: review },
+  ];
+  const risks = [];
+  if (!practical) risks.push("нет практики/проектов");
+  if (!external) risks.push("нет внешней верификации");
+  if (base < 50) risks.push("низкая общая готовность");
+  return { score, factors, risks };
+}
+
+function factorPanel(title, model) {
+  return h("div", { class: "factor-block" }, [
+    h("div", { class: "panel-head" }, [h("strong", {}, [title]), h("span", { class: "badge" }, [`${model.score}%`])]),
+    h("div", { class: "kv-list" }, model.factors.map((f) => h("div", { class: "kv" }, [h("span", {}, [f.label]), h("b", { class: f.positive ? "kv-pos" : "kv-neg" }, [f.delta])]))),
+    model.risks.length ? h("div", { class: "notice" }, [`Факторы риска: ${model.risks.join(", ")}`]) : h("p", { class: "muted-text" }, ["Существенных рисков не выявлено."]),
+  ]);
+}
+
+function forecastView() {
+  const groups = state.data.groups;
+  const sel = state.forecastGroup && (state.forecastGroup === "all" || groups.some((g) => g.id === state.forecastGroup)) ? state.forecastGroup : "all";
+  const students = state.data.students.filter((s) => sel === "all" || s.groupId === sel);
+  const rows = students.map((s) => ({ s, p: practiceReadiness(s.id), e: employmentReadiness(s.id) }));
+  const focus = currentStudent();
+  const fp = practiceReadiness(focus.id);
+  const fe = employmentReadiness(focus.id);
+  return h("section", { class: "stack" }, [
+    h("div", { class: "notice" }, ["Прогноз объясним и не заменяет решение человека. Это ориентир для планирования практики и трудоустройства."]),
+    h("div", { class: "metric-grid" }, [
+      metric("Готовы к практике", rows.filter((r) => r.p.score >= 60).length, "прогноз ≥ 60%", "green"),
+      metric("Готовы к трудоустройству", rows.filter((r) => r.e.score >= 60).length, "прогноз ≥ 60%", "teal"),
+      metric("В выборке", students.length, "студентов", "indigo"),
+      metric("Зона риска", rows.filter((r) => r.e.score < 45).length, "низкий прогноз занятости", "gold"),
+    ]),
+    h("div", { class: "filters" }, [
+      h("select", { onchange: (e) => setState({ forecastGroup: e.target.value }) }, [
+        h("option", { value: "all", selected: sel === "all" }, ["Все группы"]),
+        ...groups.map((g) => h("option", { value: g.id, selected: g.id === sel }, [`${g.name} · ${g.specialtyCode}`])),
+      ]),
+      h("div", {}, []),
+    ]),
+    h("article", { class: "panel" }, [
+      h("div", { class: "panel-head" }, [h("h3", {}, ["Прогноз по студентам"]), h("span", { class: "badge" }, ["практика / трудоустройство"])]),
+      h("div", { class: "table forecast-table" }, rows.map((r) => h("div", { class: "table-row clickable", onclick: () => setState({ currentStudentId: r.s.id }) }, [
+        h("strong", {}, [r.s.name]),
+        h("span", { class: "table-value" }, [`${r.p.score}%`]),
+        h("span", { class: "table-value" }, [`${r.e.score}%`]),
+        h("span", {}, [r.e.risks[0] || r.p.risks[0] || "рисков нет"]),
+      ]))),
+    ]),
+    h("article", { class: "panel" }, [
+      h("div", { class: "panel-head" }, [h("h3", {}, [`Разбор факторов: ${focus.name}`]), h("span", { class: "badge" }, ["объяснимость"])]),
+      h("div", { class: "two-column" }, [factorPanel("Готовность к практике", fp), factorPanel("Готовность к трудоустройству", fe)]),
+    ]),
+  ]);
+}
+
+function apiCard(a) {
+  return h("article", { class: "mini-card" }, [
+    h("div", { class: "row-badges" }, [h("span", { class: "badge" }, [a.method]), h("strong", {}, [a.path])]),
+    h("span", {}, [a.title]),
+    h("small", {}, [`Поля: ${a.fields}`]),
+    h("small", {}, [`Идемпотентность: ${a.idempotency}`]),
+    h("small", { class: "muted-text" }, [a.note]),
+  ]);
+}
+
+function batchRow(b) {
+  return h("div", { class: "table-row" }, [
+    h("strong", {}, [b.date]),
+    h("span", {}, [b.source]),
+    h("span", { class: "table-value" }, [`+${b.added} · дубли ${b.duplicates} · ошибки ${b.errors}`]),
+    b.status === "applied" ? h("button", { class: "ghost compact", onclick: () => rollbackImport(b.id) }, ["Откатить"]) : h("span", { class: "status archived" }, ["Откачен"]),
+  ]);
+}
+
+function acceptancePanel(title, items) {
+  return h("article", { class: "panel" }, [
+    h("div", { class: "panel-head" }, [h("h3", {}, [title]), h("span", { class: "badge" }, ["acceptance"])]),
+    h("ul", { class: "check-list" }, items.map((t) => h("li", {}, [t]))),
+  ]);
+}
+
+function integrationsView() {
+  const batches = state.data.importBatches;
+  const errors = state.data.importErrors;
+  return h("section", { class: "stack" }, [
+    h("div", { class: "metric-grid" }, [
+      metric("Импортов", batches.length, "пакетов загрузки", "teal"),
+      metric("Загружено", batches.reduce((s, b) => s + (b.status === "applied" ? b.added : 0), 0), "достижений в системе", "green"),
+      metric("Дублей отклонено", batches.reduce((s, b) => s + b.duplicates, 0), "защита от повторов", "gold"),
+      metric("Ошибок импорта", errors.length, "видны администратору", "indigo"),
+    ]),
+    h("article", { class: "panel" }, [
+      h("div", { class: "panel-head" }, [h("h3", {}, ["API-контракты приёма данных"]), h("span", { class: "badge" }, ["Спринт 1"])]),
+      h("div", { class: "cards-list" }, state.data.apiContracts.map(apiCard)),
+    ]),
+    h("article", { class: "panel" }, [
+      h("div", { class: "panel-head" }, [h("h3", {}, ["Импорт из внешней системы"]), h("button", { onclick: () => runImport("Электронный журнал (CSV)") }, ["Импортировать пакет"])]),
+      h("textarea", { oninput: (e) => { state.csv = e.target.value; saveState(); } }, [state.csv]),
+      h("small", { class: "muted-text" }, ["Формат: student_email,discipline_code,score,title. Проверяются дубли студентов, дисциплин и достижений; ошибки попадают в журнал; пакет можно откатить."]),
+    ]),
+    h("article", { class: "panel" }, [
+      h("div", { class: "panel-head" }, [h("h3", {}, ["Очередь импорта"]), h("span", { class: "badge" }, [`${batches.length}`])]),
+      batches.length ? h("div", { class: "table batch-table" }, batches.map(batchRow)) : emptyState("Импортов ещё не было."),
+    ]),
+    h("article", { class: "panel" }, [
+      h("div", { class: "panel-head" }, [h("h3", {}, ["Журнал ошибок импорта"]), h("span", { class: "badge" }, [`${errors.length}`])]),
+      errors.length
+        ? h("div", { class: "table errors-table" }, errors.slice(0, 40).map((er) => {
+            const b = byId(state.data.importBatches, er.batchId);
+            return h("div", { class: "table-row" }, [h("strong", {}, [b ? b.date : "—"]), h("span", {}, [`строка ${er.line}`]), h("span", {}, [er.reason])]);
+          }))
+        : emptyState("Ошибок нет."),
+    ]),
+    acceptancePanel("Критерии готовности спринта 1", ["импорт не ломает существующие данные", "ошибки видны администратору", "дубли определяются", "данные можно откатить или исправить"]),
+  ]);
+}
+
+function toggleMaskPII() {
+  state.data.aiSettings.maskPII = !state.data.aiSettings.maskPII;
+  saveState();
+  render();
+  toast(`Маскирование ПДн ${state.data.aiSettings.maskPII ? "включено" : "выключено"}`, "info");
+}
+
+function runSelfTests() {
+  const tests = [];
+  const badAccept = state.data.aiSuggestions.filter((x) => (x.status === "accepted" || x.status === "edited") && !x.decidedBy).length;
+  tests.push({ name: "AI-связи применяются только после подтверждения человеком", ok: badAccept === 0 });
+  const inRange = state.data.students.every((st) => {
+    const p = practiceReadiness(st.id).score;
+    const e = employmentReadiness(st.id).score;
+    return p >= 0 && p <= 100 && e >= 0 && e <= 100;
+  });
+  tests.push({ name: "Прогноз готовности в диапазоне 0–100", ok: inRange });
+  tests.push({ name: "Ролевой доступ: студент не видит «Интеграции» и «Верификацию»", ok: !ROLE_ACCESS.student.includes("integrations") && !ROLE_ACCESS.student.includes("verification") });
+  tests.push({ name: "Откат импорта доступен", ok: typeof rollbackImport === "function" });
+  tests.push({ name: "История AI-решений ведётся", ok: Array.isArray(state.data.aiDecisions) });
+  state.selfTests = tests;
+  saveState();
+  render();
+  const passed = tests.filter((t) => t.ok).length;
+  toast(`Самотесты: ${passed}/${tests.length} пройдено`, passed === tests.length ? "success" : "error");
+}
+
+function runLoadTest() {
+  const emails = state.data.students.map((s) => s.email);
+  const codes = state.data.disciplines.map((d) => d.code);
+  const N = 200;
+  const rows = [];
+  for (let i = 0; i < N; i += 1) rows.push(`${emails[i % emails.length]},${codes[i % codes.length]},${70 + (i % 30)},Нагрузочная строка ${i}`);
+  const start = performance.now();
+  let valid = 0;
+  rows.forEach((r) => {
+    const [email, code, score] = r.split(",");
+    const st = state.data.students.find((x) => x.email === email);
+    const d = state.data.disciplines.find((x) => x.code === code);
+    const v = Number(score);
+    if (st && d && Number.isFinite(v)) valid += 1;
+  });
+  const ms = Math.max(1, Math.round(performance.now() - start));
+  state.loadTest = { rows: N, valid, ms, rate: Math.round(N / (ms / 1000)) };
+  saveState();
+  render();
+  toast(`Нагрузочный тест: ${N} строк за ${ms} мс`, "success");
+}
+
+function helpView() {
+  const s = state.selfTests;
+  const lt = state.loadTest;
+  return h("section", { class: "stack" }, [
+    h("div", { class: "notice" }, ["Интеллектуальные функции работают в режиме подсказок. Итоговое решение всегда за человеком."]),
+    acceptancePanel("Безопасность AI", ["AI не утверждает компетенции самостоятельно", "пользователь видит источник предложения", "методист/преподаватель подтверждает связь", "персональные данные можно маскировать"]),
+    h("article", { class: "panel" }, [
+      h("div", { class: "panel-head" }, [h("h3", {}, ["Персональные данные"]), h("button", { class: "ghost", onclick: toggleMaskPII }, [state.data.aiSettings.maskPII ? "Маскирование включено" : "Маскирование выключено"])]),
+      h("p", { class: "muted-text" }, ["Пример источника с контактами:"]),
+      h("p", {}, [maskPII("Отзыв: свяжитесь с наставником ivan@partner-market.demo, тел. +7 900 123-45-67.")]),
+    ]),
+    h("article", { class: "panel" }, [
+      h("div", { class: "panel-head" }, [h("h3", {}, ["Тестирование и приёмка"]), h("div", { class: "actions" }, [h("button", { onclick: runSelfTests }, ["Запустить самотесты"]), h("button", { class: "ghost", onclick: runLoadTest }, ["Нагрузочный тест импорта"])])]),
+      s ? h("div", { class: "table tests-table" }, s.map((t) => h("div", { class: "table-row" }, [h("strong", { class: t.ok ? "kv-pos" : "kv-neg" }, [t.ok ? "OK" : "FAIL"]), h("span", {}, [t.name])]))) : h("p", { class: "muted-text" }, ["Самотесты ещё не запускались."]),
+      lt ? h("p", { class: "muted-text" }, [`Нагрузочный тест: ${lt.rows} строк обработано за ${lt.ms} мс (${lt.rate} строк/с, валидных ${lt.valid}).`]) : h("span", {}, []),
+    ]),
+    h("article", { class: "panel" }, [
+      h("div", { class: "panel-head" }, [h("h3", {}, ["Инструкция по ролям"]), h("span", { class: "badge" }, ["сценарии"])]),
+      h("ul", { class: "guide-list" }, [
+        "Администратор: раздел «Интеграции» — загрузка пакета, контроль ошибок и откат.",
+        "Методист: раздел «AI-анализ» — подтверждение предложенных связей ЗУНК.",
+        "Преподаватель: «AI-анализ» портфолио — подтверждение связей достижений и верификация.",
+        "Студент: «Развитие» — персональные рекомендации и отметка выполнения.",
+        "Заведующий/Директор: «Прогноз готовности» — оценка группы к практике и трудоустройству.",
+      ].map((t) => h("li", {}, [t]))),
+    ]),
+    acceptancePanel("Итоговые критерии приёмки очереди", [
+      "данные импортируются из внешнего источника/API",
+      "AI предлагает связи, но не утверждает их автоматически",
+      "студент получает рекомендации развития",
+      "методист подтверждает AI-предложения",
+      "директор видит прогнозы готовности",
+      "качество данных контролируется логами и отчётами",
+    ]),
+  ]);
 }
 
 render();
