@@ -1,0 +1,19 @@
+# dependencies
+node_modules/
+server/node_modules/
+
+# build output
+server/dist/
+
+# env & secrets
+.env
+*.env
+!.env.example
+server/.env
+
+# local postgres / data
+pgdata/
+*.log
+
+# scratch
+scratch/

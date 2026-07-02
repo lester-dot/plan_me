@@ -1538,3 +1538,54 @@ nav {
 .tests-table .table-row {
   grid-template-columns: 72px minmax(220px, 1fr);
 }
+
+/* ---------- Аутентификация ---------- */
+.login-page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.login-card {
+  width: min(430px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: clamp(24px, 4vw, 40px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 18px;
+}
+
+.login-card h1 {
+  margin: 4px 0 0;
+  font-size: clamp(24px, 3vw, 30px);
+}
+
+.login-submit {
+  margin-top: 6px;
+  width: 100%;
+}
+
+.login-hint {
+  margin-top: 2px;
+}
+
+.role-card .user-name {
+  display: block;
+  font-size: 15px;
+  color: #fff;
+  margin-bottom: 2px;
+}
+
+.role-card .logout-btn {
+  margin-top: 12px;
+}

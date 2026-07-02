@@ -1,0 +1,44 @@
+# Пилотное развёртывание одним стеком. Для РФ-облака замените образ БД на
+# управляемый PostgreSQL (Yandex/VK/Selectel) и уберите сервис db.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-competency}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-competency}
+      POSTGRES_DB: ${POSTGRES_DB:-competency}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-competency}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Порт наружу не публикуем — доступ только из сети compose.
+
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-competency}:${POSTGRES_PASSWORD:-competency}@db:5432/${POSTGRES_DB:-competency}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:4000}
+      SERVE_WEB: "true"
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?задайте JWT_ACCESS_SECRET в .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?задайте JWT_REFRESH_SECRET в .env}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-900}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+      SEED_PASSWORD: ${SEED_PASSWORD:-Demo!2026}
+    ports:
+      - "${API_PORT:-4000}:4000"
+
+volumes:
+  pgdata:

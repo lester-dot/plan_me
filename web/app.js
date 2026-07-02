@@ -1,5 +1,3 @@
-const STORAGE_KEY = "competency-platform-state-v1";
-
 const statusLabels = {
   draft: "Черновик",
   submitted: "На проверке",
@@ -21,79 +19,83 @@ const typeLabels = {
   employer_review: "Отзыв работодателя",
 };
 
-const state = loadState();
+const ROLE_LABELS = {
+  student: "Студент",
+  teacher: "Преподаватель",
+  head: "Заведующий",
+  methodologist: "Методист",
+  director: "Директор",
+  employer: "Работодатель",
+  admin: "Администратор",
+};
 
-function loadState() {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (!stored) {
-    return normalizeState({
-      data: structuredClone(seedData),
-      role: "student",
-      currentStudentId: "s1",
-      view: "dashboard",
-      query: "",
-      selectedDiscipline: "all",
-      csv: "student_email,discipline_code,score,title\nstudent@demo.ru,ОП.05,90,Бизнес-гипотеза торговой точки",
-    });
-  }
-  return normalizeState(JSON.parse(stored));
-}
+const ROLE_LIST = [
+  { id: "student", title: "Студент", account: "student@demo.ru" },
+  { id: "teacher", title: "Преподаватель", account: "teacher@demo.ru" },
+  { id: "head", title: "Заведующий", account: "head@demo.ru" },
+  { id: "methodologist", title: "Методист", account: "method@demo.ru" },
+  { id: "director", title: "Директор", account: "director@demo.ru" },
+  { id: "employer", title: "Работодатель", account: "employer@demo.ru" },
+  { id: "admin", title: "Администратор", account: "admin@demo.ru" },
+];
 
-function normalizeState(raw) {
-  const next = raw || {};
-  next.data = next.data || {};
-  const defaults = structuredClone(seedData);
-  Object.entries(defaults).forEach(([key, value]) => {
-    if (next.data[key] == null) next.data[key] = value;
-  });
-  next.data.roles = mergeById(next.data.roles, defaults.roles);
-  next.data.students = mergeById(next.data.students, defaults.students);
-  next.data.typeWeights = { ...defaults.typeWeights, ...(next.data.typeWeights || {}) };
-  next.data.statusWeights = { ...defaults.statusWeights, ...(next.data.statusWeights || {}) };
-  next.data.aiSettings = { ...defaults.aiSettings, ...(next.data.aiSettings || {}) };
-  ["apiContracts", "importBatches", "importErrors", "aiSuggestions", "aiDecisions", "recommendationsDone"].forEach((key) => {
-    if (!Array.isArray(next.data[key])) next.data[key] = structuredClone(defaults[key]) || [];
-  });
-  next.role ||= "student";
-  next.currentStudentId ||= "s1";
-  next.view ||= "dashboard";
-  next.query ||= "";
-  next.selectedDiscipline ||= "all";
-  next.csv ||= "student_email,discipline_code,score,title\nstudent@demo.ru,ОП.05,90,Бизнес-гипотеза торговой точки";
-  return next;
-}
+// Клиентское состояние. Доменные данные (state.data) приходят с сервера и
+// уже отфильтрованы по роли; клиент их не хранит и не изменяет напрямую.
+const state = {
+  data: null,
+  user: null,
+  role: "student",
+  view: "dashboard",
+  currentStudentId: null,
+  query: "",
+  selectedDiscipline: "all",
+  selectedCompetency: null,
+  aiInput: "",
+  devRequestId: null,
+  forecastGroup: "all",
+  csv: "student_email,discipline_code,score,title\nstudent@demo.ru,ОП.05,90,Бизнес-гипотеза торговой точки",
+  selfTests: null,
+  loadTest: null,
+};
 
-function mergeById(current = [], defaults = []) {
-  const merged = [...current];
-  defaults.forEach((item) => {
-    const existing = merged.find((candidate) => candidate.id === item.id);
-    if (existing) Object.assign(existing, { ...item, ...existing });
-    else merged.push(item);
-  });
-  return merged;
-}
-
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
+// Данные хранятся на сервере — локально ничего не сохраняем.
+function saveState() {}
 
 function setState(patch) {
   Object.assign(state, patch);
-  saveState();
   render();
 }
 
-function byId(items, id) {
-  return items.find((item) => item.id === id);
+// Загружает актуальный роль-скоупированный снимок с сервера и перерисовывает.
+async function refresh() {
+  const payload = await api.getState();
+  state.data = payload.data;
+  state.user = payload.user;
+  state.role = String(payload.user.role || "").toLowerCase();
+  if (!state.currentStudentId || !state.data.students.some((s) => s.id === state.currentStudentId)) {
+    state.currentStudentId = state.user.studentId || (state.data.students[0] && state.data.students[0].id) || null;
+  }
+  render();
 }
 
-function currentRole() {
-  return state.data.roles.find((role) => role.id === state.role);
+// Выполняет серверное действие, обновляет данные и показывает тост.
+async function apiAction(fn, successMessage, successType = "success") {
+  try {
+    await fn();
+    await refresh();
+    if (successMessage) toast(successMessage, successType);
+    return true;
+  } catch (error) {
+    toast(error.message || "Не удалось выполнить операцию", "error");
+    return false;
+  }
+}
+
+function byId(items, id) {
+  return (items || []).find((item) => item.id === id);
 }
 
 function visibleStudents() {
-  if (state.role === "student") return state.data.students.filter((student) => student.id === currentRole().userId);
-  if (state.role === "employer") return state.data.students.filter((student) => canEmployerSeeStudent(student));
   return state.data.students;
 }
 
@@ -157,7 +159,7 @@ function groupAnalytics() {
 }
 
 function currentEmployer() {
-  return state.data.employers.find((employer) => employer.id === currentRole().userId) || state.data.employers[0];
+  return state.data.employers.find((employer) => employer.id === state.user.employerId) || state.data.employers[0];
 }
 
 function canEmployerSeeStudent(student) {
@@ -235,12 +237,6 @@ function emptyState(message) {
   return h("div", { class: "empty-state" }, [message]);
 }
 
-function render() {
-  const app = document.querySelector("#app");
-  app.innerHTML = "";
-  app.append(loginShell());
-}
-
 function loginShell() {
   return h("div", { class: "app-shell" }, [
     h("a", { class: "skip-link", href: "#main-content" }, ["К основному содержанию"]),
@@ -295,15 +291,10 @@ function sidebar() {
       ]),
     ]),
     h("div", { class: "role-card" }, [
-      h("label", {}, ["Тестовая роль"]),
-      h("select", {
-        onchange: (event) => {
-          const role = event.target.value;
-          const roleMeta = state.data.roles.find((item) => item.id === role);
-          setState({ role, currentStudentId: role === "student" ? roleMeta.userId : state.currentStudentId, view: role === "employer" ? "employers" : "dashboard" });
-        },
-      }, state.data.roles.map((role) => h("option", { value: role.id, selected: role.id === state.role }, [`${role.title}`]))),
-      h("small", {}, [currentRole().account]),
+      h("label", {}, ["Учётная запись"]),
+      h("strong", { class: "user-name" }, [state.user.name || state.user.email]),
+      h("small", {}, [`${ROLE_LABELS[state.role] || state.role} · ${state.user.email}`]),
+      h("button", { class: "ghost compact logout-btn", onclick: doLogout }, ["Выйти"]),
     ]),
     h("nav", { "aria-label": "Каталог разделов" }, nav.map(([id, label]) =>
       h("button", { class: state.view === id ? "nav-item active" : "nav-item", onclick: () => setState({ view: id }) }, [label])
@@ -648,8 +639,8 @@ function requestGapScore(demand, avg) {
 function adminView() {
   return h("section", { class: "stack" }, [
     h("article", { class: "panel" }, [
-      h("div", { class: "panel-head" }, [h("h3", {}, ["Роли и доступ"]), h("span", { class: "badge" }, ["RBAC MVP"])]),
-      h("div", { class: "role-grid" }, state.data.roles.map((role) => h("div", { class: "mini-card" }, [
+      h("div", { class: "panel-head" }, [h("h3", {}, ["Роли и доступ"]), h("span", { class: "badge" }, ["RBAC (сервер)"])]),
+      h("div", { class: "role-grid" }, ROLE_LIST.map((role) => h("div", { class: "mini-card" }, [
         h("strong", {}, [role.title]),
         h("span", {}, [role.account]),
         h("small", {}, [accessDescription(role.id)]),
@@ -860,22 +851,18 @@ function employerRequestForm() {
         toast(`Неизвестные компетенции: ${unknown.join(", ")}`, "error");
         return;
       }
-      state.data.employerRequests.push({
-        id: `req${Date.now()}`,
-        employerId: currentEmployer().id,
-        title,
-        specialtyCode: state.data.college.specialty.code,
-        course: Number(data.get("course")),
-        required,
-        desired,
-        minLevel: Number(data.get("minLevel")),
-        format: data.get("format"),
-        status: "active",
-        createdAt: new Date().toISOString().slice(0, 10),
-      });
-      saveState();
-      render();
-      toast(`Запрос «${title}» создан`, "success");
+      apiAction(
+        () =>
+          api.request("POST", "/api/employers/requests", {
+            title,
+            course: Number(data.get("course")),
+            minLevel: Number(data.get("minLevel")),
+            format: data.get("format"),
+            required,
+            desired,
+          }),
+        `Запрос «${title}» создан`,
+      );
     });
   });
   return h("form", { id: formId, class: "form-grid" }, [
@@ -911,12 +898,7 @@ function publicProfileMetric(student) {
     h("strong", {}, [student.publicProfile ? "Открыто" : "Закрыто"]),
     h("button", {
       class: "ghost compact",
-      onclick: () => {
-        student.publicProfile = !student.publicProfile;
-        saveState();
-        render();
-        toast(`Публичное портфолио ${student.publicProfile ? "открыто" : "закрыто"}`, "info");
-      },
+      onclick: () => togglePortfolioAccess(student.id),
     }, [student.publicProfile ? "Закрыть" : "Открыть"]),
   ]);
 }
@@ -948,22 +930,17 @@ function evidenceForm() {
         toast("Балл должен быть числом от 0 до 100", "error");
         return;
       }
-      const evidence = {
-        id: `e${Date.now()}`,
-        studentId: data.get("studentId"),
-        disciplineId: data.get("disciplineId"),
-        title,
-        type: data.get("type"),
-        score,
-        date: new Date().toISOString().slice(0, 10),
-        status: state.role === "student" ? "submitted" : "verified_by_teacher",
-        verifier: state.role === "student" ? "" : currentRole().userId,
-        source: "ручной ввод",
-      };
-      state.data.evidence.push(evidence);
-      saveState();
-      render();
-      toast(`Достижение «${title}» добавлено`, "success");
+      apiAction(
+        () =>
+          api.request("POST", "/api/evidence", {
+            studentId: data.get("studentId"),
+            disciplineId: data.get("disciplineId"),
+            title,
+            type: data.get("type"),
+            score,
+          }),
+        `Достижение «${title}» добавлено`,
+      );
     });
   });
   return h("form", { id: formId, class: "form-grid" }, [
@@ -994,156 +971,63 @@ function studentRow(student) {
 
 function verifyEvidence(id, status) {
   const item = byId(state.data.evidence, id);
-  item.status = status;
-  item.verifier = currentRole().userId;
-  saveState();
-  render();
-  toast(`«${item.title}»: ${statusLabels[status] || status}`, status === "rejected" ? "error" : "success");
+  const title = item ? item.title : "достижение";
+  apiAction(
+    () => api.request("POST", `/api/evidence/${id}/verify`, { status }),
+    `«${title}»: ${statusLabels[status] || status}`,
+    status === "rejected" ? "error" : "success",
+  );
 }
 
 function moderateEmployer(id) {
-  const employer = byId(state.data.employers, id);
-  employer.status = employer.status === "moderated" ? "pending" : "moderated";
-  saveState();
-  render();
-  toast(`${employer.name}: ${employer.status === "moderated" ? "проверка подтверждена" : "проверка снята"}`, "info");
+  apiAction(() => api.request("POST", `/api/employers/${id}/moderate`), "Статус работодателя обновлён", "info");
 }
 
 function inviteStudent(requestId, studentId) {
-  const request = byId(state.data.employerRequests, requestId);
-  state.data.invitations.push({
-    id: `inv${Date.now()}`,
-    requestId,
-    employerId: request.employerId,
-    studentId,
-    type: request.format.includes("стаж") ? "internship" : "practice",
-    status: "sent",
-    date: new Date().toISOString().slice(0, 10),
-    note: `Приглашение по запросу «${request.title}»`,
-  });
-  saveState();
-  render();
-  toast(`${byId(state.data.students, studentId).name}: приглашение отправлено`, "success");
+  const name = (byId(state.data.students, studentId) || {}).name || "студент";
+  apiAction(() => api.request("POST", "/api/invitations", { requestId, studentId }), `${name}: приглашение отправлено`);
 }
 
 function verifyEmployerReview(id) {
-  const review = byId(state.data.employerReviews, id);
-  review.status = "verified_by_employer";
-  state.data.evidence.push({
-    id: `e${Date.now()}`,
-    studentId: review.studentId,
-    disciplineId: review.disciplineId,
-    title: `Отзыв работодателя: ${byId(state.data.employers, review.employerId).name}`,
-    type: "employer_review",
-    score: review.score,
-    date: review.date,
-    status: "verified_by_employer",
-    verifier: review.employerId,
-    source: "отзыв работодателя",
-  });
-  saveState();
-  render();
-  toast(`Отзыв подтверждён и добавлен в профиль ${byId(state.data.students, review.studentId).name}`, "success");
+  apiAction(() => api.request("POST", `/api/reviews/${id}/verify`), "Отзыв подтверждён и добавлен в профиль");
 }
 
-function markEmployerReview(id, status) {
-  const review = byId(state.data.employerReviews, id);
-  review.status = status;
-  saveState();
-  render();
-  toast(`Отзыв отправлен на доработку`, "info");
+function markEmployerReview(id) {
+  apiAction(() => api.request("POST", `/api/reviews/${id}/revision`), "Отзыв отправлен на доработку", "info");
 }
 
 function togglePortfolioAccess(studentId) {
-  const student = byId(state.data.students, studentId);
-  const opened = canEmployerSeeStudent(student);
-  student.publicProfile = !opened;
-  student.portfolioAccess = opened ? "college" : "partners";
-  saveState();
-  render();
-  toast(`${student.name}: портфолио ${opened ? "ограничено" : "открыто партнёрам"}`, "info");
+  apiAction(() => api.request("POST", `/api/students/${studentId}/portfolio`), "Доступ к портфолио обновлён", "info");
 }
 
 function addEvidenceQuick() {
-  state.data.evidence.push({
-    id: `e${Date.now()}`,
-    studentId: state.currentStudentId,
-    disciplineId: "pm01",
-    title: "Наблюдение преподавателя: торговая ситуация",
-    type: "practice",
-    score: 87,
-    date: new Date().toISOString().slice(0, 10),
-    status: "submitted",
-    verifier: "",
-    source: "быстрое добавление",
-  });
-  saveState();
-  render();
-  toast("Добавлено достижение-наблюдение", "success");
+  apiAction(
+    () =>
+      api.request("POST", "/api/evidence", {
+        studentId: state.currentStudentId,
+        disciplineId: "pm01",
+        title: "Наблюдение преподавателя: торговая ситуация",
+        type: "practice",
+        score: 87,
+      }),
+    "Добавлено достижение-наблюдение",
+  );
 }
 
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-// Спринт 1: пакетный импорт с проверкой дублей, журналом ошибок и откатом
+// Спринт 1: пакетный импорт (сервер проверяет дубли, ведёт журнал и позволяет откат).
 function runImport(source = "Электронный журнал (CSV)") {
-  const lines = (state.csv || "").trim().split(/\n+/).slice(1).filter((row) => row.trim());
-  if (!lines.length) {
-    toast("Нет строк для импорта", "info");
-    return;
-  }
-  const batchId = `imp${Date.now()}`;
-  const errorRows = [];
-  let added = 0;
-  let duplicates = 0;
-  lines.forEach((row, idx) => {
-    const line = idx + 2;
-    const [email, code, score, ...titleParts] = row.split(",");
-    const student = state.data.students.find((item) => item.email.trim().toLowerCase() === (email || "").trim().toLowerCase());
-    const discipline = state.data.disciplines.find((item) => item.code.toLowerCase() === (code || "").trim().toLowerCase());
-    const value = Number(score);
-    const title = titleParts.join(",").trim() || "Импортированная оценка";
-    if (!student) return errorRows.push({ line, reason: `студент не найден: ${email || "—"}`, dup: false });
-    if (!discipline) return errorRows.push({ line, reason: `дисциплина не найдена: ${code || "—"}`, dup: false });
-    if (!Number.isFinite(value) || value < 0 || value > 100) return errorRows.push({ line, reason: `некорректный балл: ${score || "—"}`, dup: false });
-    const duplicate = state.data.evidence.some((e) => e.studentId === student.id && e.disciplineId === discipline.id && (e.title || "").toLowerCase() === title.toLowerCase());
-    if (duplicate) {
-      duplicates += 1;
-      return errorRows.push({ line, reason: `дубль: ${student.name} · ${discipline.code} · ${title}`, dup: true });
-    }
-    state.data.evidence.push({
-      id: `e${Date.now()}${Math.random().toString(16).slice(2)}`,
-      studentId: student.id,
-      disciplineId: discipline.id,
-      title,
-      type: "grade",
-      score: value,
-      date: today(),
-      status: "submitted",
-      verifier: "",
-      source,
-      batchId,
-    });
-    added += 1;
+  apiAction(async () => {
+    const res = await api.request("POST", "/api/imports", { csv: state.csv, source });
+    toast(`Импорт: добавлено ${res.added}, дублей ${res.duplicates}, ошибок ${res.errors}`, res.added ? "success" : "error");
   });
-  errorRows.forEach((er) => state.data.importErrors.unshift({ id: `err${Date.now()}${Math.random().toString(16).slice(2, 6)}`, batchId, line: er.line, reason: er.reason }));
-  const errors = errorRows.length - duplicates;
-  state.data.importBatches.unshift({ id: batchId, date: today(), source, total: lines.length, added, duplicates, errors, status: "applied" });
-  saveState();
-  render();
-  toast(`Импорт: добавлено ${added}, дублей ${duplicates}, ошибок ${errors}`, added ? "success" : "error");
 }
 
 function rollbackImport(batchId) {
-  const before = state.data.evidence.length;
-  state.data.evidence = state.data.evidence.filter((e) => e.batchId !== batchId);
-  const removed = before - state.data.evidence.length;
-  const batch = byId(state.data.importBatches, batchId);
-  if (batch) batch.status = "rolled_back";
-  saveState();
-  render();
-  toast(`Импорт откачен, удалено достижений: ${removed}`, "info");
+  apiAction(() => api.request("POST", `/api/imports/${batchId}/rollback`), "Импорт откачен", "info");
 }
 
 function downloadText(filename, content, mime = "text/csv;charset=utf-8") {
@@ -1234,35 +1118,13 @@ function confidenceBar(value) {
   return h("div", { class: "chart-track confidence", role: "progressbar", "aria-label": `уверенность ${pct}%`, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct) }, [h("i", { style: `width:${pct}%` })]);
 }
 
-function logAiDecision(payload) {
-  state.data.aiDecisions.unshift({
-    id: `dec${Date.now()}${Math.random().toString(16).slice(2, 6)}`,
-    by: currentRole().userId,
-    role: state.role,
-    at: today(),
-    ...payload,
-  });
-}
-
 function decideSuggestion(id, decision, newCompetencyId) {
-  const s = byId(state.data.aiSuggestions, id);
-  if (!s || !canConfirmAi()) return;
-  if (decision === "accepted") {
-    if (newCompetencyId) s.competencyId = newCompetencyId;
-    if (s.kind === "link" && s.disciplineId && s.competencyId) {
-      const exists = state.data.links.some((l) => l.disciplineId === s.disciplineId && l.competencyId === s.competencyId);
-      if (!exists) state.data.links.push({ disciplineId: s.disciplineId, competencyId: s.competencyId, weight: s.weight || 0.25, source: "ai" });
-    }
-    s.status = newCompetencyId ? "edited" : "accepted";
-  } else {
-    s.status = "rejected";
-  }
-  s.decidedBy = currentRole().userId;
-  s.decidedAt = today();
-  logAiDecision({ suggestionId: s.id, kind: s.kind, competencyId: s.competencyId, disciplineId: s.disciplineId || "", decision: s.status });
-  saveState();
-  render();
-  toast(decision === "accepted" ? "Предложение подтверждено человеком" : "Предложение отклонено", decision === "accepted" ? "success" : "info");
+  if (!canConfirmAi()) return;
+  apiAction(
+    () => api.request("POST", `/api/ai/suggestions/${id}/decision`, { decision, competencyId: newCompetencyId }),
+    decision === "accepted" ? "Предложение подтверждено человеком" : "Предложение отклонено",
+    decision === "accepted" ? "success" : "info",
+  );
 }
 
 function editSuggestion(id) {
@@ -1279,25 +1141,12 @@ function analyzeSource() {
   const source = document.getElementById("ai-source")?.value || "Другое";
   const disciplineId = document.getElementById("ai-discipline")?.value || state.data.disciplines[0].id;
   if (text.length < 12) { toast("Добавьте больше текста для анализа", "error"); return; }
-  const found = aiSuggestCompetencies(text, 3);
-  if (!found.length) { toast("AI не нашёл явных совпадений с ЗУНК", "info"); return; }
-  found.forEach((f) => state.data.aiSuggestions.unshift({
-    id: `ai${Date.now()}${Math.random().toString(16).slice(2, 6)}`,
-    kind: "link",
-    sourceType: source,
-    sourceText: text.slice(0, 240),
-    disciplineId,
-    competencyId: f.competencyId,
-    weight: 0.25,
-    confidence: f.confidence,
-    status: "proposed",
-    createdBy: currentRole().userId,
-    createdAt: today(),
-  }));
-  state.aiInput = "";
-  saveState();
-  render();
-  toast(`AI предложил ${found.length} связ(и). Требуется подтверждение методиста.`, "success");
+  apiAction(async () => {
+    const res = await api.request("POST", "/api/ai/analyze", { text, source, disciplineId });
+    state.aiInput = "";
+    if (res.created) toast(`AI предложил ${res.created} связ(и). Требуется подтверждение методиста.`, "success");
+    else toast("AI не нашёл явных совпадений с ЗУНК", "info");
+  });
 }
 
 function suggestionCard(s) {
@@ -1360,12 +1209,11 @@ function aiHistoryPanel() {
 }
 
 function confirmPortfolioLink(disciplineId, competencyId, title) {
-  const exists = state.data.links.some((l) => l.disciplineId === disciplineId && l.competencyId === competencyId);
-  if (!exists) state.data.links.push({ disciplineId, competencyId, weight: 0.25, source: "ai-portfolio" });
-  logAiDecision({ suggestionId: "portfolio", kind: "portfolio-link", competencyId, disciplineId, decision: "accepted" });
-  saveState();
-  render();
-  toast(`Связь подтверждена: ${byId(state.data.competencies, competencyId).code} ↔ «${title}»`, "success");
+  const code = (byId(state.data.competencies, competencyId) || {}).code || competencyId;
+  apiAction(
+    () => api.request("POST", "/api/ai/portfolio/confirm", { disciplineId, competencyId }),
+    `Связь подтверждена: ${code} ↔ «${title}»`,
+  );
 }
 
 function aiPortfolioPanel() {
@@ -1435,12 +1283,12 @@ function recommendationsFor(studentId) {
 }
 
 function toggleRecommendation(id) {
-  const set = state.data.recommendationsDone;
-  const i = set.indexOf(id);
-  if (i >= 0) set.splice(i, 1); else set.push(id);
-  saveState();
-  render();
-  toast(i >= 0 ? "Рекомендация снята" : "Рекомендация отмечена выполненной", "info");
+  const done = state.data.recommendationsDone.includes(id);
+  apiAction(
+    () => api.request("POST", "/api/recommendations/toggle", { studentId: currentStudent().id, key: id }),
+    done ? "Рекомендация снята" : "Рекомендация отмечена выполненной",
+    "info",
+  );
 }
 
 function recommendationCard(r, isDone) {
@@ -1658,10 +1506,8 @@ function integrationsView() {
 }
 
 function toggleMaskPII() {
-  state.data.aiSettings.maskPII = !state.data.aiSettings.maskPII;
-  saveState();
-  render();
-  toast(`Маскирование ПДн ${state.data.aiSettings.maskPII ? "включено" : "выключено"}`, "info");
+  const next = !state.data.aiSettings.maskPII;
+  apiAction(() => api.request("POST", "/api/settings/ai", { maskPII: next }), `Маскирование ПДн ${next ? "включено" : "выключено"}`, "info");
 }
 
 function runSelfTests() {
@@ -1743,4 +1589,67 @@ function helpView() {
   ]);
 }
 
-render();
+/* ===================== Аутентификация и запуск ===================== */
+
+function render() {
+  const app = document.querySelector("#app");
+  app.innerHTML = "";
+  if (!state.user || !state.data) {
+    app.append(loginScreen());
+    return;
+  }
+  app.append(loginShell());
+}
+
+function loginScreen() {
+  const form = h("form", { class: "login-card", id: "login-form" }, [
+    h("div", { class: "login-brand" }, [h("div", { class: "brand-mark" }, ["КП"]), h("strong", {}, ["Профиль компетенций"])]),
+    h("h1", {}, ["Вход в платформу"]),
+    h("p", { class: "muted-text" }, ["Введите служебные email и пароль. Роль и доступ определяются на сервере."]),
+    field("Email", h("input", { name: "email", type: "email", autocomplete: "username", placeholder: "you@college.ru", required: true }), "wide"),
+    field("Пароль", h("input", { name: "password", type: "password", autocomplete: "current-password", required: true }), "wide"),
+    h("button", { type: "submit", class: "login-submit" }, ["Войти"]),
+    h("small", { class: "muted-text login-hint" }, ["Демо-доступы: student@demo.ru, teacher@demo.ru, method@demo.ru, admin@demo.ru … · пароль Demo!2026"]),
+  ]);
+  setTimeout(() => {
+    const el = document.getElementById("login-form");
+    if (!el || el.dataset.ready) return;
+    el.dataset.ready = "true";
+    el.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const data = new FormData(el);
+      try {
+        await api.login(String(data.get("email")).trim(), String(data.get("password")));
+        await refresh();
+        toast("Вы вошли в систему", "success");
+      } catch (error) {
+        toast(error.message || "Не удалось войти", "error");
+      }
+    });
+  });
+  return h("div", { class: "login-page" }, [form]);
+}
+
+async function doLogout() {
+  await api.logout();
+  state.user = null;
+  state.data = null;
+  render();
+  toast("Вы вышли из системы", "info");
+}
+
+async function boot() {
+  if (!api.accessToken) {
+    render();
+    return;
+  }
+  try {
+    await refresh();
+  } catch {
+    api.accessToken = "";
+    api.refreshToken = "";
+    render();
+  }
+}
+
+boot();
