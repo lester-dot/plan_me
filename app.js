@@ -250,10 +250,10 @@ function loginShell() {
 
 function sidebar() {
   const nav = [
-    ["dashboard", "Профиль"],
+    ["dashboard", "Личный кабинет"],
     ["competencies", "Карта компетенций"],
     ["education", "Образовательный процесс"],
-    ["evidence", "Доказательства"],
+    ["evidence", "Достижения"],
     ["verification", "Верификация"],
     ["employers", "Работодатели"],
     ["analytics", "Аналитика"],
@@ -273,7 +273,6 @@ function sidebar() {
       h("div", { class: "brand-mark" }, ["КП"]),
       h("div", {}, [
         h("strong", {}, ["Профиль компетенций"]),
-        h("span", {}, ["пилотная платформа"]),
       ]),
     ]),
     h("div", { class: "role-card" }, [
@@ -301,26 +300,24 @@ function sidebar() {
 function topbar() {
   return h("header", { class: "topbar" }, [
     h("div", {}, [
-      h("span", { class: "eyebrow" }, [state.data.college.department]),
       h("h1", {}, [titleByView()]),
     ]),
     h("div", { class: "toolbar" }, [
       h("select", {
         onchange: (event) => setState({ currentStudentId: event.target.value }),
         disabled: state.role === "student",
-      }, state.data.students.map((student) => h("option", { value: student.id, selected: student.id === state.currentStudentId }, [student.name]))),
+      }, visibleStudents().map((student) => h("option", { value: student.id, selected: student.id === state.currentStudentId }, [student.name]))),
       h("button", { class: "ghost", onclick: () => window.print() }, ["Экспорт PDF"]),
-      h("button", { onclick: resetDemo }, ["Сбросить демо"]),
     ]),
   ]);
 }
 
 function titleByView() {
   return {
-    dashboard: "Рабочий кабинет",
-    competencies: "Компетентностная карта",
+    dashboard: "Личный кабинет",
+    competencies: "Карта компетенций",
     education: "Образовательный процесс",
-    evidence: "Доказательства",
+    evidence: "Достижения",
     verification: "Очередь верификации",
     employers: "Работодатели и подбор",
     analytics: "Аналитика пилота",
@@ -355,17 +352,16 @@ function dashboardView() {
       h("div", {}, [
         h("span", { class: "eyebrow" }, [`${student.name} / ${byId(state.data.groups, student.groupId).name}`]),
         h("h2", {}, [`Готовность к профессии: ${readiness(student.id)}%`]),
-        h("p", {}, ["Профиль считается из образовательных событий, доказательств, весов дисциплин и статуса верификации. Отклоненные материалы не повышают уровень."]),
+        h("p", {}, ["Профиль считается из образовательных событий, достижений, весов дисциплин и статуса верификации. Отклоненные материалы не повышают уровень."]),
         h("div", { class: "hero-stats" }, [
           h("span", {}, ["ЗУНК-модель"]),
           h("span", {}, ["практика и проекты"]),
           h("span", {}, ["верификация"]),
         ]),
       ]),
-      ring(readiness(student.id), "готовность"),
     ]),
       h("div", { class: "metric-grid" }, [
-      metric("Доказательств", studentEvidence.length, "оценки, практики, проекты", "teal"),
+      metric("Достижений", studentEvidence.length, "оценки, практики, проекты", "teal"),
       metric("На проверке", studentEvidence.filter((e) => e.status === "submitted").length, "ждут подтверждения", "indigo"),
       metric("Среднее по группе", `${analytics.avg}%`, "для сравнения", "gold"),
       publicProfileMetric(student),
@@ -383,7 +379,7 @@ function dashboardView() {
           h("h3", {}, ["Таймлайн достижений"]),
           h("button", { class: "ghost", onclick: addEvidenceQuick }, ["Добавить"]),
         ]),
-        ...(studentEvidence.length ? studentEvidence.slice(0, 6).map(evidenceItem) : [emptyState("Пока нет доказательств. Нажмите «Добавить», чтобы создать первое достижение.")]),
+        ...(studentEvidence.length ? studentEvidence.slice(0, 6).map(evidenceItem) : [emptyState("Пока нет достижений. Нажмите «Добавить», чтобы создать первое достижение.")]),
       ]),
     ]),
   ]);
@@ -418,7 +414,6 @@ function filteredCompetencies() {
 function educationView() {
   const cycles = [...new Set(state.data.disciplines.map((item) => item.cycle))];
   return h("section", { class: "stack" }, [
-    h("div", { class: "notice" }, [`Пилот наполнен по архиву специальности ${state.data.college.specialty.code} ${state.data.college.specialty.name}: дисциплины, профессиональные модули, учебная и производственная практика.`]),
     ...cycles.map((cycle) => h("article", { class: "panel" }, [
       h("div", { class: "panel-head" }, [h("h3", {}, [cycle]), h("span", { class: "badge" }, [`${state.data.disciplines.filter((item) => item.cycle === cycle).length} позиций`])]),
       h("div", { class: "table education-table" }, state.data.disciplines.filter((item) => item.cycle === cycle).map((discipline) => educationRow(discipline))),
@@ -432,8 +427,8 @@ function evidenceView() {
   return h("section", { class: "stack" }, [
     h("article", { class: "panel" }, [
       h("div", { class: "panel-head" }, [
-        h("h3", {}, ["Добавить доказательство"]),
-        h("span", { class: "badge" }, ["Evidence"]),
+        h("h3", {}, ["Добавить достижение"]),
+        h("span", { class: "badge" }, ["Достижение"]),
       ]),
       evidenceForm(),
     ]),
@@ -447,7 +442,7 @@ function evidenceView() {
     ]),
     list.length
       ? h("div", { class: "cards-list" }, list.sort((a, b) => b.date.localeCompare(a.date)).map(evidenceItem))
-      : emptyState("Доказательств пока нет. Добавьте вручную или импортируйте оценки из CSV."),
+      : emptyState("Достижений пока нет. Добавьте вручную или импортируйте оценки из CSV."),
   ]);
 }
 
@@ -458,7 +453,7 @@ function verificationView() {
     h("div", { class: "notice" }, ["Преподаватель подтверждает учебные результаты, заведующий кафедрой - значимые достижения, методист - корректность связи с ЗУНК, работодатель - практики."]),
     queue.length
       ? h("div", { class: "cards-list" }, queue.map((item) => verificationItem(item)))
-      : emptyState("Очередь пуста — все доказательства обработаны."),
+      : emptyState("Очередь пуста — все достижения обработаны."),
     h("article", { class: "panel" }, [
       h("div", { class: "panel-head" }, [h("h3", {}, ["Отзывы работодателей"]), h("span", { class: "badge" }, [`${reviews.length} на проверке`])]),
       reviews.length
@@ -566,7 +561,7 @@ function reportsView() {
     ]),
     h("article", { class: "panel" }, [
       h("div", { class: "panel-head" }, [h("h3", {}, ["Публичные портфолио"]), h("span", { class: "badge" }, ["контроль доступа"])]),
-      h("div", { class: "cards-list" }, state.data.students.map(publicPortfolioCard)),
+      h("div", { class: "cards-list" }, visibleStudents().map(publicPortfolioCard)),
     ]),
   ]);
 }
@@ -582,7 +577,7 @@ function analyticsView() {
   return h("section", { class: "stack" }, [
     h("div", { class: "metric-grid" }, [
       metric("Средняя готовность", `${analytics.avg}%`, "по группе ТД-26", "teal"),
-      metric("Доказательств", analytics.evidenceCount, "в пилотной базе", "green"),
+      metric("Достижений", analytics.evidenceCount, "в базе группы", "green"),
       metric("Очередь проверки", analytics.queue, "submitted / needs_revision", "indigo"),
       metric("Зона внимания", analytics.weak.code, analytics.weak.title, "gold"),
     ]),
@@ -646,7 +641,7 @@ function adminView() {
 
 function accessDescription(role) {
   return {
-    student: "свои данные, портфолио, доказательства",
+    student: "свои данные, портфолио, достижения",
     teacher: "свои группы, оценки, подтверждение результатов",
     head: "специальность, аналитика, спорные подтверждения",
     methodologist: "карты компетенций и методические связи",
@@ -937,7 +932,7 @@ function evidenceForm() {
       state.data.evidence.push(evidence);
       saveState();
       render();
-      toast(`Доказательство «${title}» добавлено`, "success");
+      toast(`Достижение «${title}» добавлено`, "success");
     });
   });
   return h("form", { id: formId, class: "form-grid" }, [
@@ -945,7 +940,7 @@ function evidenceForm() {
     field("Дисциплина", h("select", { name: "disciplineId" }, state.data.disciplines.map((discipline) => h("option", { value: discipline.id }, [`${discipline.code} ${discipline.name}`])))),
     field("Тип", h("select", { name: "type" }, Object.entries(typeLabels).map(([value, label]) => h("option", { value }, [label])))),
     field("Балл", h("input", { name: "score", type: "number", min: "0", max: "100", value: "85" })),
-    field("Событие", h("input", { name: "title", value: "Новое доказательство" }), "wide"),
+    field("Событие", h("input", { name: "title", value: "Новое достижение" }), "wide"),
     h("button", { type: "submit" }, ["Сохранить"]),
   ]);
 }
@@ -1053,7 +1048,7 @@ function addEvidenceQuick() {
   });
   saveState();
   render();
-  toast("Добавлено доказательство-наблюдение", "success");
+  toast("Добавлено достижение-наблюдение", "success");
 }
 
 function importCsv() {
@@ -1125,12 +1120,6 @@ function exportMethodologyCsv() {
   ];
   downloadText("methodology-coverage.csv", rows.map((row) => row.join(";")).join("\n"));
   toast("Методическое покрытие выгружено в CSV", "success");
-}
-
-function resetDemo() {
-  if (!confirm("Сбросить демо? Все внесённые изменения будут удалены и данные вернутся к исходным.")) return;
-  localStorage.removeItem(STORAGE_KEY);
-  location.reload();
 }
 
 render();
