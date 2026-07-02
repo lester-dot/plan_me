@@ -208,6 +208,29 @@ function h(tag, attrs = {}, children = []) {
   return node;
 }
 
+function toastRoot() {
+  let root = document.getElementById("toast-root");
+  if (!root) {
+    root = h("div", { id: "toast-root", class: "toast-root", role: "status", "aria-live": "polite", "aria-atomic": "false" }, []);
+    document.body.append(root);
+  }
+  return root;
+}
+
+function toast(message, type = "info") {
+  const root = toastRoot();
+  const node = h("div", { class: `toast toast-${type}` }, [message]);
+  root.append(node);
+  setTimeout(() => {
+    node.classList.add("toast-out");
+    setTimeout(() => node.remove(), 260);
+  }, 3200);
+}
+
+function emptyState(message) {
+  return h("div", { class: "empty-state" }, [message]);
+}
+
 function render() {
   const app = document.querySelector("#app");
   app.innerHTML = "";
@@ -360,7 +383,7 @@ function dashboardView() {
           h("h3", {}, ["Таймлайн достижений"]),
           h("button", { class: "ghost", onclick: addEvidenceQuick }, ["Добавить"]),
         ]),
-        ...studentEvidence.slice(0, 6).map(evidenceItem),
+        ...(studentEvidence.length ? studentEvidence.slice(0, 6).map(evidenceItem) : [emptyState("Пока нет доказательств. Нажмите «Добавить», чтобы создать первое достижение.")]),
       ]),
     ]),
   ]);
@@ -377,7 +400,9 @@ function competenciesView() {
         ...state.data.disciplines.map((discipline) => h("option", { value: discipline.id, selected: state.selectedDiscipline === discipline.id }, [`${discipline.code} ${discipline.name}`])),
       ]),
     ]),
-    h("div", { class: "competency-grid" }, filteredCompetencies().map((competency) => competencyCard(competency, scores[competency.id]))),
+    filteredCompetencies().length
+      ? h("div", { class: "competency-grid" }, filteredCompetencies().map((competency) => competencyCard(competency, scores[competency.id])))
+      : emptyState("Ничего не найдено. Измените запрос или выберите другую дисциплину."),
   ]);
 }
 
@@ -420,7 +445,9 @@ function evidenceView() {
       h("textarea", { oninput: (event) => { state.csv = event.target.value; saveState(); } }, [state.csv]),
       h("small", {}, ["Формат: student_email,discipline_code,score,title"]),
     ]),
-    h("div", { class: "cards-list" }, list.sort((a, b) => b.date.localeCompare(a.date)).map(evidenceItem)),
+    list.length
+      ? h("div", { class: "cards-list" }, list.sort((a, b) => b.date.localeCompare(a.date)).map(evidenceItem))
+      : emptyState("Доказательств пока нет. Добавьте вручную или импортируйте оценки из CSV."),
   ]);
 }
 
@@ -429,10 +456,14 @@ function verificationView() {
   const reviews = state.data.employerReviews.filter((item) => item.status === "submitted");
   return h("section", { class: "stack" }, [
     h("div", { class: "notice" }, ["Преподаватель подтверждает учебные результаты, заведующий кафедрой - значимые достижения, методист - корректность связи с ЗУНК, работодатель - практики."]),
-    h("div", { class: "cards-list" }, queue.map((item) => verificationItem(item))),
+    queue.length
+      ? h("div", { class: "cards-list" }, queue.map((item) => verificationItem(item)))
+      : emptyState("Очередь пуста — все доказательства обработаны."),
     h("article", { class: "panel" }, [
       h("div", { class: "panel-head" }, [h("h3", {}, ["Отзывы работодателей"]), h("span", { class: "badge" }, [`${reviews.length} на проверке`])]),
-      h("div", { class: "cards-list" }, reviews.map((review) => employerReviewCard(review, true))),
+      reviews.length
+        ? h("div", { class: "cards-list" }, reviews.map((review) => employerReviewCard(review, true)))
+        : emptyState("Нет отзывов работодателей на проверке."),
     ]),
   ]);
 }
@@ -465,14 +496,18 @@ function employersView() {
     ]),
     active ? h("article", { class: "panel chart-panel" }, [
       h("div", { class: "panel-head" }, [h("h3", {}, [`Подбор: ${active.title}`]), h("span", { class: "badge" }, [`минимум ${active.minLevel}%`])]),
-      h("div", { class: "cards-list" }, matches.map((match) => matchCard(active, match))),
+      matches.length
+        ? h("div", { class: "cards-list" }, matches.map((match) => matchCard(active, match)))
+        : emptyState("Подходящих студентов не найдено. Смягчите требования запроса."),
     ]) : h("div", { class: "notice" }, ["Пока нет запросов работодателей."]),
     h("article", { class: "panel" }, [
       h("div", { class: "panel-head" }, [h("h3", {}, ["Приглашения и отзывы"]), h("span", { class: "badge" }, ["внешняя верификация"])]),
-      h("div", { class: "cards-list" }, [
-        ...state.data.invitations.map(invitationCard),
-        ...reviews.map((review) => employerReviewCard(review, false)),
-      ]),
+      state.data.invitations.length || reviews.length
+        ? h("div", { class: "cards-list" }, [
+            ...state.data.invitations.map(invitationCard),
+            ...reviews.map((review) => employerReviewCard(review, false)),
+          ])
+        : emptyState("Приглашений и отзывов пока нет."),
     ]),
   ]);
 }
@@ -661,7 +696,20 @@ function competencyCard(competency, value) {
   const linked = state.data.links
     .filter((link) => link.competencyId === competency.id)
     .map((link) => `${byId(state.data.disciplines, link.disciplineId).code} ${link.weight}`);
-  return h("article", { class: "competency-card" }, [
+  const selected = state.selectedCompetency === competency.id;
+  return h("article", {
+    class: `competency-card clickable${selected ? " selected" : ""}`,
+    role: "button",
+    tabindex: "0",
+    "aria-pressed": selected ? "true" : "false",
+    onclick: () => setState({ selectedCompetency: selected ? null : competency.id }),
+    onkeydown: (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        setState({ selectedCompetency: selected ? null : competency.id });
+      }
+    },
+  }, [
     h("div", { class: "panel-head" }, [h("span", { class: "badge" }, [competency.code]), ring(value, "уровень")]),
     h("h3", {}, [competency.title]),
     zunkBlock("Знания", competency.knowledge),
@@ -769,12 +817,27 @@ function employerRequestForm() {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const data = new FormData(form);
+      const title = (data.get("title") || "").trim();
       const required = data.get("required").split(",").map((item) => item.trim()).filter(Boolean);
       const desired = data.get("desired").split(",").map((item) => item.trim()).filter(Boolean);
+      const known = new Set(state.data.competencies.map((competency) => competency.id));
+      const unknown = [...required, ...desired].filter((id) => !known.has(id));
+      if (!title) {
+        toast("Укажите название запроса", "error");
+        return;
+      }
+      if (!required.length) {
+        toast("Добавьте хотя бы одну обязательную компетенцию", "error");
+        return;
+      }
+      if (unknown.length) {
+        toast(`Неизвестные компетенции: ${unknown.join(", ")}`, "error");
+        return;
+      }
       state.data.employerRequests.push({
         id: `req${Date.now()}`,
         employerId: currentEmployer().id,
-        title: data.get("title"),
+        title,
         specialtyCode: state.data.college.specialty.code,
         course: Number(data.get("course")),
         required,
@@ -786,6 +849,7 @@ function employerRequestForm() {
       });
       saveState();
       render();
+      toast(`Запрос «${title}» создан`, "success");
     });
   });
   return h("form", { id: formId, class: "form-grid" }, [
@@ -825,6 +889,7 @@ function publicProfileMetric(student) {
         student.publicProfile = !student.publicProfile;
         saveState();
         render();
+        toast(`Публичное портфолио ${student.publicProfile ? "открыто" : "закрыто"}`, "info");
       },
     }, [student.publicProfile ? "Закрыть" : "Открыть"]),
   ]);
@@ -847,13 +912,23 @@ function evidenceForm() {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const data = new FormData(form);
+      const title = (data.get("title") || "").trim();
+      const score = Number(data.get("score"));
+      if (!title) {
+        toast("Укажите название события", "error");
+        return;
+      }
+      if (!Number.isFinite(score) || score < 0 || score > 100) {
+        toast("Балл должен быть числом от 0 до 100", "error");
+        return;
+      }
       const evidence = {
         id: `e${Date.now()}`,
         studentId: data.get("studentId"),
         disciplineId: data.get("disciplineId"),
-        title: data.get("title"),
+        title,
         type: data.get("type"),
-        score: Number(data.get("score")),
+        score,
         date: new Date().toISOString().slice(0, 10),
         status: state.role === "student" ? "submitted" : "verified_by_teacher",
         verifier: state.role === "student" ? "" : currentRole().userId,
@@ -862,6 +937,7 @@ function evidenceForm() {
       state.data.evidence.push(evidence);
       saveState();
       render();
+      toast(`Доказательство «${title}» добавлено`, "success");
     });
   });
   return h("form", { id: formId, class: "form-grid" }, [
@@ -896,6 +972,7 @@ function verifyEvidence(id, status) {
   item.verifier = currentRole().userId;
   saveState();
   render();
+  toast(`«${item.title}»: ${statusLabels[status] || status}`, status === "rejected" ? "error" : "success");
 }
 
 function moderateEmployer(id) {
@@ -903,6 +980,7 @@ function moderateEmployer(id) {
   employer.status = employer.status === "moderated" ? "pending" : "moderated";
   saveState();
   render();
+  toast(`${employer.name}: ${employer.status === "moderated" ? "проверка подтверждена" : "проверка снята"}`, "info");
 }
 
 function inviteStudent(requestId, studentId) {
@@ -919,6 +997,7 @@ function inviteStudent(requestId, studentId) {
   });
   saveState();
   render();
+  toast(`${byId(state.data.students, studentId).name}: приглашение отправлено`, "success");
 }
 
 function verifyEmployerReview(id) {
@@ -938,6 +1017,7 @@ function verifyEmployerReview(id) {
   });
   saveState();
   render();
+  toast(`Отзыв подтверждён и добавлен в профиль ${byId(state.data.students, review.studentId).name}`, "success");
 }
 
 function markEmployerReview(id, status) {
@@ -945,6 +1025,7 @@ function markEmployerReview(id, status) {
   review.status = status;
   saveState();
   render();
+  toast(`Отзыв отправлен на доработку`, "info");
 }
 
 function togglePortfolioAccess(studentId) {
@@ -954,6 +1035,7 @@ function togglePortfolioAccess(studentId) {
   student.portfolioAccess = opened ? "college" : "partners";
   saveState();
   render();
+  toast(`${student.name}: портфолио ${opened ? "ограничено" : "открыто партнёрам"}`, "info");
 }
 
 function addEvidenceQuick() {
@@ -971,30 +1053,43 @@ function addEvidenceQuick() {
   });
   saveState();
   render();
+  toast("Добавлено доказательство-наблюдение", "success");
 }
 
 function importCsv() {
-  const rows = state.csv.trim().split(/\n+/).slice(1);
+  const rows = state.csv.trim().split(/\n+/).slice(1).filter((row) => row.trim());
+  let imported = 0;
+  let skipped = 0;
   rows.forEach((row) => {
     const [email, code, score, ...titleParts] = row.split(",");
     const student = state.data.students.find((item) => item.email.trim() === email?.trim());
     const discipline = state.data.disciplines.find((item) => item.code.toLowerCase() === code?.trim().toLowerCase());
-    if (!student || !discipline) return;
+    const value = Number(score);
+    if (!student || !discipline || !Number.isFinite(value)) {
+      skipped += 1;
+      return;
+    }
     state.data.evidence.push({
       id: `e${Date.now()}${Math.random().toString(16).slice(2)}`,
       studentId: student.id,
       disciplineId: discipline.id,
       title: titleParts.join(",").trim() || "Импортированная оценка",
       type: "grade",
-      score: Number(score),
+      score: value,
       date: new Date().toISOString().slice(0, 10),
       status: "verified_by_teacher",
       verifier: "t1",
       source: "CSV импорт",
     });
+    imported += 1;
   });
   saveState();
   render();
+  if (!imported && !skipped) {
+    toast("Нет строк для импорта", "info");
+  } else {
+    toast(`Импортировано: ${imported}${skipped ? `, пропущено: ${skipped}` : ""}`, skipped && !imported ? "error" : "success");
+  }
 }
 
 function downloadText(filename, content, mime = "text/csv;charset=utf-8") {
@@ -1016,6 +1111,7 @@ function exportReportCsv() {
     ...state.data.students.map((student) => [student.name, readiness(student.id), student.portfolioAccess, student.employmentStatus]),
   ];
   downloadText("competency-platform-reports.csv", rows.map((row) => row.join(";")).join("\n"));
+  toast("Отчёт выгружен в CSV", "success");
 }
 
 function exportMethodologyCsv() {
@@ -1028,9 +1124,11 @@ function exportMethodologyCsv() {
     }),
   ];
   downloadText("methodology-coverage.csv", rows.map((row) => row.join(";")).join("\n"));
+  toast("Методическое покрытие выгружено в CSV", "success");
 }
 
 function resetDemo() {
+  if (!confirm("Сбросить демо? Все внесённые изменения будут удалены и данные вернутся к исходным.")) return;
   localStorage.removeItem(STORAGE_KEY);
   location.reload();
 }
