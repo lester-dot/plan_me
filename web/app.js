@@ -276,7 +276,11 @@ const ROLE_ACCESS = {
   admin: ["dashboard", "competencies", "education", "evidence", "verification", "employers", "analytics", "methodology", "integrations", "reports", "admin", "help"],
 };
 
+// «resume» — вспомогательная страница личного кабинета студента (не в меню).
+const EXTRA_VIEWS = ["resume"];
+
 function canAccess(view) {
+  if (EXTRA_VIEWS.includes(view)) return true;
   return (ROLE_ACCESS[state.role] || []).includes(view);
 }
 
@@ -313,11 +317,14 @@ function topbar() {
       h("h1", {}, [titleByView()]),
     ]),
     h("div", { class: "toolbar" }, [
-      h("select", {
-        onchange: (event) => setState({ currentStudentId: event.target.value }),
-        disabled: state.role === "student",
-      }, visibleStudents().map((student) => h("option", { value: student.id, selected: student.id === state.currentStudentId }, [student.name]))),
-      h("button", { class: "ghost", onclick: () => window.print() }, ["Экспорт PDF"]),
+      state.role === "student"
+        ? h("div", { class: "student-name-tag", title: "Ваш профиль" }, [(currentStudent() || {}).name || state.user.name])
+        : h("select", {
+            onchange: (event) => setState({ currentStudentId: event.target.value }),
+          }, visibleStudents().map((student) => h("option", { value: student.id, selected: student.id === state.currentStudentId }, [student.name]))),
+      state.role === "student"
+        ? h("button", { onclick: () => setState({ view: "resume" }) }, ["Моё резюме"])
+        : h("button", { class: "ghost", onclick: () => window.print() }, ["Экспорт PDF"]),
     ]),
   ]);
 }
@@ -325,6 +332,7 @@ function topbar() {
 function titleByView() {
   return {
     dashboard: "Личный кабинет",
+    resume: "Резюме",
     competencies: "Карта компетенций",
     education: "Образовательный процесс",
     evidence: "Достижения",
@@ -345,6 +353,7 @@ function titleByView() {
 function viewContent() {
   const views = {
     dashboard: dashboardView,
+    resume: resumeView,
     competencies: competenciesView,
     education: educationView,
     evidence: evidenceView,
@@ -402,6 +411,67 @@ function dashboardView() {
           h("button", { class: "ghost", onclick: addEvidenceQuick }, ["Добавить"]),
         ]),
         ...(studentEvidence.length ? studentEvidence.slice(0, 6).map(evidenceItem) : [emptyState("Пока нет достижений. Нажмите «Добавить», чтобы создать первое достижение.")]),
+      ]),
+    ]),
+  ]);
+}
+
+function resumePlaceholder(title, note) {
+  return h("div", { class: "mini-card resume-placeholder" }, [
+    h("strong", {}, [title]),
+    h("small", {}, [note]),
+    h("span", { class: "muted-text" }, ["Будет заполнено позже"]),
+  ]);
+}
+
+// Дополнительная страница «Резюме» личного кабинета студента (черновик-скелет).
+function resumeView() {
+  const student = currentStudent();
+  const group = byId(state.data.groups, student.groupId);
+  const scores = competencyScores(student.id);
+  const strong = state.data.competencies
+    .map((c) => ({ c, v: scores[c.id] || 0 }))
+    .sort((a, b) => b.v - a.v)
+    .slice(0, 4);
+  const evid = state.data.evidence
+    .filter((e) => e.studentId === student.id && trustFor(e) >= 0.7)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 5);
+  return h("section", { class: "stack" }, [
+    h("div", { class: "resume-toolbar" }, [
+      h("button", { class: "ghost", onclick: () => setState({ view: "dashboard" }) }, ["← В личный кабинет"]),
+      h("span", { class: "badge" }, ["черновик · заполним позже"]),
+    ]),
+    h("div", { class: "hero-panel" }, [
+      h("div", {}, [
+        h("span", { class: "eyebrow" }, [`${group ? group.name : ""} · ${state.data.college.specialty.code} ${state.data.college.specialty.name}`]),
+        h("h2", {}, [student.name]),
+        h("p", {}, ["Резюме формируется на основе подтверждённых достижений и компетенций. Скоро здесь появятся контакты, опыт, цели и экспорт в PDF."]),
+        h("div", { class: "hero-stats" }, [
+          h("span", {}, [`Готовность ${readiness(student.id)}%`]),
+          h("span", {}, [student.employmentStatus || "—"]),
+        ]),
+      ]),
+    ]),
+    h("div", { class: "two-column" }, [
+      h("article", { class: "panel" }, [
+        h("div", { class: "panel-head" }, [h("h3", {}, ["Ключевые компетенции"]), h("span", { class: "badge" }, ["сильные стороны"])]),
+        ...strong.map((s) => progressRow(s.c.code, s.c.title, s.v)),
+      ]),
+      h("article", { class: "panel" }, [
+        h("div", { class: "panel-head" }, [h("h3", {}, ["Подтверждённые достижения"]), h("span", { class: "badge" }, [`${evid.length}`])]),
+        evid.length ? h("div", { class: "cards-list" }, evid.map(evidenceItem)) : emptyState("Пока нет подтверждённых достижений."),
+      ]),
+    ]),
+    h("article", { class: "panel" }, [
+      h("div", { class: "panel-head" }, [h("h3", {}, ["Разделы резюме"]), h("span", { class: "badge" }, ["в разработке"])]),
+      h("div", { class: "role-grid" }, [
+        resumePlaceholder("Контакты", "email, телефон, город"),
+        resumePlaceholder("О себе", "краткая профессиональная справка"),
+        resumePlaceholder("Опыт и практика", "места практик, проекты, стажировки"),
+        resumePlaceholder("Образование", "специальность, курс, дисциплины"),
+        resumePlaceholder("Навыки", "цифровые инструменты, языки"),
+        resumePlaceholder("Экспорт", "PDF-версия резюме для работодателя"),
       ]),
     ]),
   ]);
