@@ -1630,3 +1630,25 @@ nav {
   margin-top: 4px;
   font-size: 12.5px;
 }
+
+/* Логотип-кнопка «На главную» */
+.brand.clickable {
+  cursor: pointer;
+  border-radius: 14px;
+  padding: 4px;
+  margin: -4px;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.brand.clickable:hover {
+  opacity: 0.85;
+}
+
+.brand.clickable:active {
+  transform: scale(0.98);
+}
+
+.brand.clickable:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35);
+}

@@ -288,7 +288,20 @@ function sidebar() {
   const nav = NAV_ITEMS.filter(([id]) => canAccess(id));
 
   return h("aside", { class: "sidebar" }, [
-    h("div", { class: "brand" }, [
+    h("div", {
+      class: "brand clickable",
+      role: "button",
+      tabindex: "0",
+      "aria-label": "На главную",
+      title: "На главную",
+      onclick: () => setState({ view: "dashboard" }),
+      onkeydown: (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          setState({ view: "dashboard" });
+        }
+      },
+    }, [
       h("div", { class: "brand-mark" }, ["КП"]),
       h("div", {}, [
         h("strong", {}, ["Профиль компетенций"]),
