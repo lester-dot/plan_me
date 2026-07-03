@@ -1676,8 +1676,8 @@ function loginScreen() {
     h("div", { class: "login-brand" }, [h("div", { class: "brand-mark" }, ["КП"]), h("strong", {}, ["Профиль компетенций"])]),
     h("h1", {}, ["Вход в платформу"]),
     h("p", { class: "muted-text" }, ["Введите служебные email и пароль. Роль и доступ определяются на сервере."]),
-    field("Email", h("input", { name: "email", type: "email", autocomplete: "username", placeholder: "you@college.ru", required: true }), "wide"),
-    field("Пароль", h("input", { name: "password", type: "password", autocomplete: "current-password", required: true }), "wide"),
+    field("Email", h("input", { name: "email", type: "email", autocomplete: "username", placeholder: "you@college.ru", required: true })),
+    field("Пароль", h("input", { name: "password", type: "password", autocomplete: "current-password", required: true })),
     h("button", { type: "submit", class: "login-submit" }, ["Войти"]),
     h("small", { class: "muted-text login-hint" }, ["Демо-доступы: student@demo.ru, teacher@demo.ru, method@demo.ru, admin@demo.ru … · пароль Demo!2026"]),
   ]);

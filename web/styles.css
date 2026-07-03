@@ -1550,12 +1550,19 @@ nav {
 .login-card {
   width: min(430px, 100%);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: stretch;
   gap: 14px;
   padding: clamp(24px, 4vw, 40px);
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
+}
+
+/* Внутри карточки входа поля всегда в одну колонку, даже с модификатором wide */
+.login-card .field {
+  grid-column: 1 / -1 !important;
 }
 
 .login-brand {
