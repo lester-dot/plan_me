@@ -144,6 +144,52 @@ function readiness(studentId) {
   return Math.round(scores.reduce((sum, score) => sum + score, 0) / Math.max(scores.length, 1));
 }
 
+// Модель ЗУНК (ТЗ §5, §6, §12): уровень освоения, а не только процент.
+// Знание → Умение → Навык → Компетенция → Экспертный.
+const LEVELS = [
+  { key: "none", label: "Нет данных", tone: "none", rank: 0 },
+  { key: "knowledge", label: "Знание", tone: "cyan", rank: 1 },
+  { key: "ability", label: "Умение", tone: "indigo", rank: 2 },
+  { key: "skill", label: "Навык", tone: "violet", rank: 3 },
+  { key: "competency", label: "Компетенция", tone: "green", rank: 4 },
+  { key: "expert", label: "Экспертный", tone: "gold", rank: 5 },
+];
+
+// Определяет уровень освоения компетенции студентом по подтверждённым доказательствам.
+function competencyLevel(studentId, competencyId) {
+  const discIds = new Set(state.data.links.filter((l) => l.competencyId === competencyId).map((l) => l.disciplineId));
+  const evid = state.data.evidence.filter((e) => e.studentId === studentId && discIds.has(e.disciplineId) && !["rejected", "draft", "archived"].includes(e.status));
+  if (!evid.length) return LEVELS[0];
+  const types = evid.map((e) => e.type);
+  const has = (t) => types.includes(t);
+  const external = evid.some((e) => e.type === "employer_review" || ["verified_by_employer", "verified_by_department_head", "verified_by_methodologist"].includes(e.status));
+  const applied = has("project") || has("practice") || has("contest") || has("employer_review");
+  const skill = evid.filter((e) => ["lab", "practice", "project"].includes(e.type)).length >= 2;
+  const ability = has("lab") || has("practice") || has("project");
+  if (external && applied) return LEVELS[5];
+  if (applied) return LEVELS[4];
+  if (skill) return LEVELS[3];
+  if (ability) return LEVELS[2];
+  return LEVELS[1];
+}
+
+function levelBadge(level) {
+  return h("span", { class: `level-badge lvl-${level.tone}`, title: "Уровень освоения" }, [level.label]);
+}
+
+// Строка компетенции с уровнем ЗУНК и подтверждённым прогрессом.
+function competencyLevelRow(competency, value, studentId) {
+  const level = competencyLevel(studentId, competency.id);
+  return h("div", { class: "progress-row level-row" }, [
+    h("div", {}, [
+      h("div", { class: "level-row-head" }, [h("strong", {}, [competency.code]), levelBadge(level)]),
+      h("span", {}, [competency.title]),
+    ]),
+    h("div", { class: "bar-wrap", role: "progressbar", "aria-label": `${competency.code}: ${value}%, уровень ${level.label}`, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(value) }, [h("div", { class: `bar bar-${level.tone}`, style: `width:${value}%` })]),
+    h("b", {}, [`${value}%`]),
+  ]);
+}
+
 function groupAnalytics() {
   const students = visibleStudents();
   const avg = Math.round(students.reduce((sum, student) => sum + readiness(student.id), 0) / Math.max(students.length, 1));
@@ -416,7 +462,7 @@ function dashboardView() {
           h("h3", {}, ["Срез компетенций"]),
           h("button", { class: "ghost", onclick: () => setState({ view: "competencies" }) }, ["К карте"]),
         ]),
-        ...state.data.competencies.map((competency) => progressRow(competency.code, competency.title, scores[competency.id])),
+        ...state.data.competencies.map((competency) => competencyLevelRow(competency, scores[competency.id], student.id)),
       ]),
       h("article", { class: "panel" }, [
         h("div", { class: "panel-head" }, [
@@ -469,7 +515,7 @@ function resumeView() {
     h("div", { class: "two-column" }, [
       h("article", { class: "panel" }, [
         h("div", { class: "panel-head" }, [h("h3", {}, ["Ключевые компетенции"]), h("span", { class: "badge" }, ["сильные стороны"])]),
-        ...strong.map((s) => progressRow(s.c.code, s.c.title, s.v)),
+        ...strong.map((s) => competencyLevelRow(s.c, s.v, student.id)),
       ]),
       h("article", { class: "panel" }, [
         h("div", { class: "panel-head" }, [h("h3", {}, ["Подтверждённые достижения"]), h("span", { class: "badge" }, [`${evid.length}`])]),
@@ -490,10 +536,19 @@ function resumeView() {
   ]);
 }
 
+function levelLegend() {
+  return h("div", { class: "level-legend" }, [
+    h("span", { class: "legend-label" }, ["Уровень освоения:"]),
+    ...LEVELS.slice(1).map((l) => h("span", { class: `level-badge lvl-${l.tone}` }, [l.label])),
+  ]);
+}
+
 function competenciesView() {
   const student = currentStudent();
   const scores = competencyScores(student.id);
   return h("section", { class: "stack" }, [
+    h("div", { class: "notice" }, ["Компетенция считается не по факту оценки, а по совокупности подтверждённых доказательств. Уровень растёт: знание → умение → навык → компетенция → экспертный."]),
+    levelLegend(),
     h("div", { class: "filters" }, [
       h("input", { placeholder: "Поиск по коду, названию, ЗУНК", value: state.query, oninput: (event) => setState({ query: event.target.value }) }),
       h("select", { onchange: (event) => setState({ selectedDiscipline: event.target.value }) }, [
@@ -810,7 +865,10 @@ function competencyCard(competency, value) {
       }
     },
   }, [
-    h("div", { class: "panel-head" }, [h("span", { class: "badge" }, [competency.code]), ring(value, "уровень")]),
+    h("div", { class: "panel-head" }, [
+      h("div", { class: "competency-head-tags" }, [h("span", { class: "badge" }, [competency.code]), levelBadge(competencyLevel(currentStudent().id, competency.id))]),
+      ring(value, "уровень"),
+    ]),
     h("h3", {}, [competency.title]),
     zunkBlock("Знания", competency.knowledge),
     zunkBlock("Умения", competency.skills),

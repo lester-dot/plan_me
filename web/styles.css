@@ -1652,3 +1652,73 @@ nav {
   outline: none;
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35);
 }
+
+/* ---------- ЗУНК-уровни (ТЗ §5, §6, §12, §20) ---------- */
+.level-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 10px;
+  border-radius: var(--pill);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.lvl-none { background: var(--surface-3); color: var(--muted); }
+.lvl-cyan { background: var(--cyan-soft); color: var(--cyan-ink); }
+.lvl-indigo { background: var(--indigo-soft); color: var(--primary-700); }
+.lvl-violet { background: #ece4ff; color: #5a2fd0; }
+.lvl-green { background: var(--green-soft); color: var(--green-ink); }
+.lvl-gold { background: var(--gold-soft); color: var(--gold-ink); }
+
+.bar-none { background: var(--line-2); }
+.bar-cyan { background: linear-gradient(90deg, #22d3ee, #14b8d4); }
+.bar-indigo { background: linear-gradient(90deg, #818cf8, #6366f1); }
+.bar-violet { background: linear-gradient(90deg, #7d5cff, #6c47ff); }
+.bar-green { background: linear-gradient(90deg, #34d399, #22c55e); }
+.bar-gold { background: linear-gradient(90deg, #ffcf5c, #ffb020); }
+
+.level-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.competency-head-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.level-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 2px;
+}
+
+.level-legend .legend-label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Визуальное разделение подтверждённых и неподтверждённых доказательств */
+.evidence-card:has(.status.submitted),
+.evidence-card:has(.status.needs_revision),
+.evidence-card:has(.status.draft) {
+  border-left: 3px dashed var(--line-2);
+}
+
+.evidence-card:has(.status.verified_by_teacher),
+.evidence-card:has(.status.verified_by_department_head),
+.evidence-card:has(.status.verified_by_methodologist),
+.evidence-card:has(.status.verified_by_employer) {
+  border-left: 3px solid var(--green);
+}
