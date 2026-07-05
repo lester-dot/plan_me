@@ -950,6 +950,22 @@ nav {
   display: block;
 }
 
+/* Одинаковый размер свёрнутых плашек компетенций */
+.competency-card:not(.open) {
+  min-height: 212px;
+}
+
+.competency-card:not(.open) h3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.competency-card:not(.open) .competency-toggle {
+  margin-top: auto;
+}
+
 .competency-toggle {
   display: flex;
   align-items: center;
