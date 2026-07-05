@@ -51,6 +51,7 @@ const state = {
   selectedDiscipline: "all",
   selectedCompetency: null,
   openCompetencies: [],
+  openCycles: [],
   aiInput: "",
   devRequestId: null,
   forecastGroup: "all",
@@ -607,13 +608,38 @@ function filteredCompetencies() {
   });
 }
 
+function toggleCycle(cycle) {
+  const open = state.openCycles.includes(cycle);
+  const next = open ? state.openCycles.filter((x) => x !== cycle) : [...state.openCycles, cycle];
+  setState({ openCycles: next });
+}
+
 function educationView() {
   const cycles = [...new Set(state.data.disciplines.map((item) => item.cycle))];
+  const allOpen = cycles.every((c) => state.openCycles.includes(c));
   return h("section", { class: "stack" }, [
-    ...cycles.map((cycle) => h("article", { class: "panel" }, [
-      h("div", { class: "panel-head" }, [h("h3", {}, [cycle]), h("span", { class: "badge" }, [`${state.data.disciplines.filter((item) => item.cycle === cycle).length} позиций`])]),
-      h("div", { class: "table education-table" }, state.data.disciplines.filter((item) => item.cycle === cycle).map((discipline) => educationRow(discipline))),
-    ])),
+    h("div", { class: "collapse-toolbar" }, [
+      h("span", { class: "muted-text" }, ["Нажмите на цикл, чтобы раскрыть его дисциплины"]),
+      h("button", { class: "ghost compact", onclick: () => setState({ openCycles: allOpen ? [] : cycles }) }, [allOpen ? "Свернуть все" : "Раскрыть все"]),
+    ]),
+    ...cycles.map((cycle) => {
+      const items = state.data.disciplines.filter((item) => item.cycle === cycle);
+      const open = state.openCycles.includes(cycle);
+      return h("article", { class: `panel accordion${open ? " open" : ""}` }, [
+        h("button", {
+          class: "accordion-head",
+          "aria-expanded": open ? "true" : "false",
+          onclick: () => toggleCycle(cycle),
+        }, [
+          h("span", { class: "accordion-title" }, [
+            h("span", { class: "accordion-chevron" }, ["▸"]),
+            h("strong", {}, [cycle]),
+          ]),
+          h("span", { class: "badge" }, [`${items.length} дисциплин`]),
+        ]),
+        ...(open ? [h("div", { class: "table education-table accordion-body" }, items.map((discipline) => educationRow(discipline)))] : []),
+      ]);
+    }),
   ]);
 }
 

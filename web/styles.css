@@ -1765,3 +1765,98 @@ nav {
 .evidence-card:has(.status.verified_by_employer) {
   border-left: 3px solid var(--green);
 }
+
+/* ---------- Аккордеон: «Образовательный процесс» ---------- */
+.collapse-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.panel.accordion {
+  padding: 0;
+  overflow: hidden;
+}
+
+.accordion-head {
+  width: 100%;
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px clamp(16px, 2vw, 24px);
+  background: var(--surface);
+  color: var(--ink);
+  border: 0;
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: background-color 0.15s ease;
+}
+
+.accordion-head:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+  box-shadow: none;
+  transform: none;
+}
+
+.accordion-head:active {
+  transform: none;
+  box-shadow: none;
+}
+
+.accordion-head:focus-visible {
+  outline: none;
+  box-shadow: inset var(--focus);
+}
+
+.accordion.open .accordion-head {
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.accordion-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.accordion-title strong {
+  font-size: clamp(16px, 1.5vw, 20px);
+  font-weight: 750;
+  text-transform: capitalize;
+}
+
+.accordion-chevron {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--primary-050);
+  color: var(--primary-700);
+  font-size: 12px;
+  transition: transform 0.18s ease;
+}
+
+.accordion.open .accordion-chevron {
+  transform: rotate(90deg);
+}
+
+.accordion-body {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 8px clamp(12px, 1.6vw, 18px) 16px;
+  animation: comp-reveal 0.2s ease;
+}
