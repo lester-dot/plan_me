@@ -934,8 +934,11 @@ nav {
 
 .competency-card h3 {
   margin: 0;
-  font-size: clamp(16px, 1.35vw, 19px);
-  line-height: 1.2;
+  font-size: clamp(13.5px, 1vw, 15px);
+  font-weight: 650;
+  line-height: 1.35;
+  color: var(--ink-2);
+  letter-spacing: 0;
 }
 
 .cring {
