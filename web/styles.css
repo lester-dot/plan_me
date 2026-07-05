@@ -887,59 +887,102 @@ nav {
   display: grid;
   grid-template-columns: repeat(3, minmax(260px, 1fr));
   gap: var(--space-4);
-  align-items: stretch;
-}
-
-.competency-card {
-  min-height: 320px;
-  padding: clamp(18px, 2vw, 26px);
-  border-radius: var(--radius-lg);
-  display: grid;
-  grid-template-rows: auto auto repeat(3, minmax(0, auto)) 1fr;
-  gap: var(--space-1);
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-}
-
-.competency-card::before {
-  content: "";
-  display: block;
-  position: absolute;
+  align-items: start;
 }
 
 .competency-card {
   position: relative;
+  padding: clamp(16px, 1.8vw, 22px);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
-.competency-card:nth-child(4n + 1) { background: linear-gradient(180deg, #f4f0ff, var(--surface) 42%); }
-.competency-card:nth-child(4n + 2) { background: linear-gradient(180deg, #fff6e4, var(--surface) 42%); }
-.competency-card:nth-child(4n + 3) { background: linear-gradient(180deg, #e6f8fc, var(--surface) 42%); }
-.competency-card:nth-child(4n) { background: linear-gradient(180deg, #e8f9ee, var(--surface) 42%); }
+.competency-card:nth-child(4n + 1) { background: linear-gradient(180deg, #f4f0ff, var(--surface) 60%); }
+.competency-card:nth-child(4n + 2) { background: linear-gradient(180deg, #fff6e4, var(--surface) 60%); }
+.competency-card:nth-child(4n + 3) { background: linear-gradient(180deg, #e6f8fc, var(--surface) 60%); }
+.competency-card:nth-child(4n) { background: linear-gradient(180deg, #e8f9ee, var(--surface) 60%); }
 
 .competency-card.clickable {
   cursor: pointer;
 }
 
 .competency-card.clickable:hover {
-  transform: translateY(-4px);
+  transform: translateY(-3px);
   box-shadow: var(--shadow-md);
   border-color: var(--primary-100);
 }
 
-.competency-card.selected {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(108, 71, 255, 0.22), var(--shadow-md);
+.competency-card.open {
+  border-color: var(--primary-100);
+  box-shadow: var(--shadow-md);
 }
 
-.competency-card .ring {
-  --ring-size: 84px;
+.competency-top {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
-.competency-card .ring strong {
-  font-size: 17px;
+.competency-headline {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
 }
 
-.competency-card .ring::before {
-  inset: 9px;
+.competency-card h3 {
+  margin: 0;
+  font-size: clamp(16px, 1.35vw, 19px);
+  line-height: 1.2;
+}
+
+.cring {
+  flex: 0 0 auto;
+  line-height: 0;
+}
+
+.cring svg {
+  display: block;
+}
+
+.competency-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-2);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.competency-toggle .chev {
+  font-size: 10px;
+  color: var(--primary);
+}
+
+.competency-details {
+  display: grid;
+  gap: var(--space-1);
+  animation: comp-reveal 0.22s ease;
+}
+
+@keyframes comp-reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.competency-details .zunk:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.competency-details .chips {
+  margin-top: var(--space-3);
 }
 
 .zunk {

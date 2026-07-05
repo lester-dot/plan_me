@@ -50,6 +50,7 @@ const state = {
   query: "",
   selectedDiscipline: "all",
   selectedCompetency: null,
+  openCompetencies: [],
   aiInput: "",
   devRequestId: null,
   forecastGroup: "all",
@@ -175,6 +176,42 @@ function competencyLevel(studentId, competencyId) {
 
 function levelBadge(level) {
   return h("span", { class: `level-badge lvl-${level.tone}`, title: "Уровень освоения" }, [level.label]);
+}
+
+const LEVEL_COLORS = {
+  none: "#c7ccdd",
+  cyan: "#14b8d4",
+  indigo: "#6366f1",
+  violet: "#6c47ff",
+  green: "#22c55e",
+  gold: "#ffb020",
+};
+
+// Кольцо прогресса: скруглённая обводка, процент по центру, цвет по уровню ЗУНК.
+function competencyRing(value, tone) {
+  const size = 92;
+  const stroke = 8;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(100, Math.round(value || 0)));
+  const off = c * (1 - pct / 100);
+  const color = LEVEL_COLORS[tone] || LEVEL_COLORS.violet;
+  const cx = size / 2;
+  const svg =
+    `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="Выполнение ${pct}%">` +
+    `<circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="rgba(20,21,42,0.08)" stroke-width="${stroke}"/>` +
+    `<circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round" ` +
+    `stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 ${cx} ${cx})" ` +
+    `style="transition:stroke-dashoffset .6s cubic-bezier(.22,1,.36,1)"/>` +
+    `<text x="50%" y="50%" text-anchor="middle" dominant-baseline="central" font-size="21" font-weight="850" fill="#14152a" font-family="Inter, system-ui, sans-serif">${pct}%</text>` +
+    `</svg>`;
+  return h("div", { class: "cring", html: svg });
+}
+
+function toggleCompetency(id) {
+  const open = state.openCompetencies.includes(id);
+  const next = open ? state.openCompetencies.filter((x) => x !== id) : [...state.openCompetencies, id];
+  setState({ openCompetencies: next });
 }
 
 // Строка компетенции с уровнем ЗУНК и подтверждённым прогрессом.
@@ -547,7 +584,6 @@ function competenciesView() {
   const student = currentStudent();
   const scores = competencyScores(student.id);
   return h("section", { class: "stack" }, [
-    h("div", { class: "notice" }, ["Компетенция считается не по факту оценки, а по совокупности подтверждённых доказательств. Уровень растёт: знание → умение → навык → компетенция → экспертный."]),
     levelLegend(),
     h("div", { class: "filters" }, [
       h("input", { placeholder: "Поиск по коду, названию, ЗУНК", value: state.query, oninput: (event) => setState({ query: event.target.value }) }),
@@ -851,29 +887,43 @@ function competencyCard(competency, value) {
   const linked = state.data.links
     .filter((link) => link.competencyId === competency.id)
     .map((link) => `${byId(state.data.disciplines, link.disciplineId).code} ${link.weight}`);
-  const selected = state.selectedCompetency === competency.id;
+  const level = competencyLevel(currentStudent().id, competency.id);
+  const open = state.openCompetencies.includes(competency.id);
   return h("article", {
-    class: `competency-card clickable${selected ? " selected" : ""}`,
+    class: `competency-card clickable${open ? " open" : ""}`,
     role: "button",
     tabindex: "0",
-    "aria-pressed": selected ? "true" : "false",
-    onclick: () => setState({ selectedCompetency: selected ? null : competency.id }),
+    "aria-expanded": open ? "true" : "false",
+    onclick: () => toggleCompetency(competency.id),
     onkeydown: (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        setState({ selectedCompetency: selected ? null : competency.id });
+        toggleCompetency(competency.id);
       }
     },
   }, [
-    h("div", { class: "panel-head" }, [
-      h("div", { class: "competency-head-tags" }, [h("span", { class: "badge" }, [competency.code]), levelBadge(competencyLevel(currentStudent().id, competency.id))]),
-      ring(value, "уровень"),
+    h("div", { class: "competency-top" }, [
+      competencyRing(value, level.tone),
+      h("div", { class: "competency-headline" }, [
+        h("div", { class: "competency-head-tags" }, [h("span", { class: "badge" }, [competency.code]), levelBadge(level)]),
+        h("h3", {}, [competency.title]),
+      ]),
     ]),
-    h("h3", {}, [competency.title]),
-    zunkBlock("Знания", competency.knowledge),
-    zunkBlock("Умения", competency.skills),
-    zunkBlock("Навыки", competency.habits),
-    h("div", { class: "chips" }, linked.map((item) => h("span", {}, [item]))),
+    h("div", { class: "competency-toggle" }, [
+      h("span", {}, [open ? "Скрыть детали" : "Знания · умения · навыки"]),
+      h("span", { class: "chev" }, [open ? "▲" : "▼"]),
+    ]),
+    ...(open
+      ? [
+          h("div", { class: "competency-details" }, [
+            zunkBlock("Знания", competency.knowledge),
+            zunkBlock("Умения", competency.skills),
+            zunkBlock("Навыки", competency.habits),
+            competency.indicators && competency.indicators.length ? zunkBlock("Индикаторы компетенции", competency.indicators) : null,
+            h("div", { class: "chips" }, linked.map((item) => h("span", {}, [item]))),
+          ].filter(Boolean)),
+        ]
+      : []),
   ]);
 }
 
