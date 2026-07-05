@@ -337,6 +337,7 @@ const NAV_ITEMS = [
   ["competencies", "Карта компетенций"],
   ["education", "Образовательный процесс"],
   ["evidence", "Достижения"],
+  ["resume", "Резюме"],
   ["ai", "AI-анализ"],
   ["development", "Развитие"],
   ["forecast", "Прогноз готовности"],
@@ -351,7 +352,7 @@ const NAV_ITEMS = [
 ];
 
 const ROLE_ACCESS = {
-  student: ["dashboard", "competencies", "education", "evidence", "ai", "development", "employers", "analytics", "reports", "help"],
+  student: ["dashboard", "competencies", "education", "evidence", "resume", "ai", "development", "employers", "analytics"],
   teacher: ["dashboard", "competencies", "education", "evidence", "ai", "development", "forecast", "verification", "employers", "analytics", "reports", "help"],
   methodologist: ["dashboard", "competencies", "education", "evidence", "ai", "development", "forecast", "verification", "analytics", "methodology", "reports", "admin", "help"],
   head: ["dashboard", "competencies", "education", "evidence", "ai", "development", "forecast", "verification", "employers", "analytics", "methodology", "reports", "admin", "help"],
@@ -360,7 +361,8 @@ const ROLE_ACCESS = {
   admin: ["dashboard", "competencies", "education", "evidence", "verification", "employers", "analytics", "methodology", "integrations", "reports", "admin", "help"],
 };
 
-// «resume» — вспомогательная страница личного кабинета студента (не в меню).
+// «resume» доступна как страница (кнопка «Моё резюме»), а в меню показывается
+// только тем ролям, у кого она есть в ROLE_ACCESS.
 const EXTRA_VIEWS = ["resume"];
 
 function canAccess(view) {
@@ -369,7 +371,8 @@ function canAccess(view) {
 }
 
 function sidebar() {
-  const nav = NAV_ITEMS.filter(([id]) => canAccess(id));
+  // В меню — только пункты из прав роли (canAccess шире: разрешает переходы по кнопкам).
+  const nav = NAV_ITEMS.filter(([id]) => (ROLE_ACCESS[state.role] || []).includes(id));
 
   return h("aside", { class: "sidebar" }, [
     h("div", {
