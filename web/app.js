@@ -1142,13 +1142,14 @@ function verificationItem(item) {
 }
 
 function publicProfileMetric(student) {
-  return h("div", { class: "metric tone-green" }, [
+  const open = canEmployerSeeStudent(student);
+  return h("div", { class: `metric portfolio-metric ${open ? "is-open" : "is-closed"}` }, [
     h("span", {}, ["Публичное портфолио"]),
-    h("strong", {}, [student.publicProfile ? "Открыто" : "Закрыто"]),
+    h("strong", {}, [open ? "Открыто" : "Закрыто"]),
     h("button", {
       class: "ghost compact",
       onclick: () => togglePortfolioAccess(student.id),
-    }, [student.publicProfile ? "Закрыть" : "Открыть"]),
+    }, [open ? "Закрыть доступ" : "Открыть доступ"]),
   ]);
 }
 

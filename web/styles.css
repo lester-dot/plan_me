@@ -1914,3 +1914,28 @@ nav {
     display: none;
   }
 }
+
+/* ---------- Карточка «Публичное портфолио»: цветовой статус ---------- */
+.portfolio-metric.is-open {
+  --tone: var(--green);
+}
+
+.portfolio-metric.is-open strong {
+  color: var(--green-ink);
+}
+
+.portfolio-metric.is-closed {
+  --tone: var(--danger);
+}
+
+.portfolio-metric.is-closed strong {
+  color: var(--danger-ink);
+}
+
+.portfolio-metric.is-closed {
+  background: var(--danger-soft);
+}
+
+.portfolio-metric.is-open {
+  background: var(--green-soft);
+}
