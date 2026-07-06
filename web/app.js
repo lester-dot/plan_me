@@ -39,6 +39,34 @@ const ROLE_LIST = [
   { id: "admin", title: "Администратор", account: "admin@demo.ru" },
 ];
 
+// Маскот кабинета — дружелюбный синий огонёк (векторная иллюстрация).
+const MASCOT_FLAME = `<svg viewBox="0 0 224 288" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <radialGradient id="fbody" cx="48%" cy="58%" r="64%">
+      <stop offset="0%" stop-color="#eafaff"/>
+      <stop offset="40%" stop-color="#a6e0ff"/>
+      <stop offset="76%" stop-color="#43a2ff"/>
+      <stop offset="100%" stop-color="#2b6dff"/>
+    </radialGradient>
+    <linearGradient id="fedge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#57adff"/>
+      <stop offset="1" stop-color="#1c52e0"/>
+    </linearGradient>
+    <linearGradient id="fgloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".92"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <path d="M112 8 C136 52 134 84 120 104 C142 74 176 70 176 112 C178 122 176 130 170 136 C204 158 206 210 174 246 C150 272 74 272 50 246 C18 210 20 158 54 136 C48 130 46 122 48 112 C48 70 82 74 104 104 C90 84 88 52 112 8 Z" fill="url(#fbody)" stroke="url(#fedge)" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M92 112 C64 138 60 178 82 156 C70 186 92 176 92 176 C66 196 62 232 90 252 C58 226 54 182 76 152 C56 166 62 132 92 112 Z" fill="url(#fgloss)" opacity=".5"/>
+  <ellipse cx="132" cy="150" rx="9" ry="19" fill="#ffffff" opacity=".33"/>
+  <ellipse cx="92" cy="188" rx="12" ry="16" fill="#123a9e"/>
+  <ellipse cx="142" cy="188" rx="12" ry="16" fill="#123a9e"/>
+  <circle cx="96" cy="182" r="3.6" fill="#fff"/>
+  <circle cx="146" cy="182" r="3.6" fill="#fff"/>
+  <path d="M102 214 Q117 236 143 216 Q128 230 102 214 Z" fill="#0e2b8f"/>
+</svg>`;
+
 // Клиентское состояние. Доменные данные (state.data) приходят с сервера и
 // уже отфильтрованы по роли; клиент их не хранит и не изменяет напрямую.
 const state = {
@@ -490,6 +518,7 @@ function dashboardView() {
           h("span", {}, ["верификация"]),
         ]),
       ]),
+      h("div", { class: "hero-mascot", html: MASCOT_FLAME }),
     ]),
       h("div", { class: "metric-grid" }, [
       metric("Достижений", studentEvidence.length, "оценки, практики, проекты", "teal"),

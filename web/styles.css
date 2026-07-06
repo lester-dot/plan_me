@@ -1879,3 +1879,38 @@ nav {
   padding: 8px clamp(12px, 1.6vw, 18px) 16px;
   animation: comp-reveal 0.2s ease;
 }
+
+/* ---------- Маскот-огонёк в hero ---------- */
+.hero-mascot {
+  align-self: center;
+  justify-self: end;
+  width: clamp(140px, 16vw, 208px);
+  filter: drop-shadow(0 16px 30px rgba(15, 23, 42, 0.3));
+  animation: mascot-float 4.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.hero-mascot svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@keyframes mascot-float {
+  0%, 100% { transform: translateY(0) rotate(-1.5deg); }
+  50% { transform: translateY(-9px) rotate(1.5deg); }
+}
+
+@media (max-width: 1080px) {
+  .hero-mascot {
+    justify-self: center;
+    width: clamp(120px, 34vw, 168px);
+    margin-top: 6px;
+  }
+}
+
+@media (max-width: 760px) {
+  .hero-mascot {
+    display: none;
+  }
+}
