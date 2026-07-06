@@ -677,7 +677,8 @@ function educationView() {
 
 function evidenceView() {
   const student = currentStudent();
-  const list = state.data.evidence.filter((item) => state.role === "student" ? item.studentId === student.id : true);
+  const isStudent = state.role === "student";
+  const list = state.data.evidence.filter((item) => isStudent ? item.studentId === student.id : true);
   return h("section", { class: "stack" }, [
     h("article", { class: "panel" }, [
       h("div", { class: "panel-head" }, [
@@ -686,17 +687,19 @@ function evidenceView() {
       ]),
       evidenceForm(),
     ]),
-    h("article", { class: "panel" }, [
-      h("div", { class: "panel-head" }, [
-        h("h3", {}, ["Импорт оценок CSV"]),
-        h("button", { class: "ghost", onclick: () => runImport("Ручной CSV (Достижения)") }, ["Импортировать"]),
-      ]),
-      h("textarea", { oninput: (event) => { state.csv = event.target.value; saveState(); } }, [state.csv]),
-      h("small", {}, ["Формат: student_email,discipline_code,score,title"]),
-    ]),
+    isStudent
+      ? h("div", { class: "notice" }, ["Оценки по дисциплинам поступают автоматически из 1С. Здесь добавляйте достижения: проекты, конкурсы, практики и сертификаты."])
+      : h("article", { class: "panel" }, [
+          h("div", { class: "panel-head" }, [
+            h("h3", {}, ["Импорт оценок CSV"]),
+            h("button", { class: "ghost", onclick: () => runImport("Ручной CSV (Достижения)") }, ["Импортировать"]),
+          ]),
+          h("textarea", { oninput: (event) => { state.csv = event.target.value; saveState(); } }, [state.csv]),
+          h("small", {}, ["Формат: student_email,discipline_code,score,title"]),
+        ]),
     list.length
       ? h("div", { class: "cards-list" }, list.sort((a, b) => b.date.localeCompare(a.date)).map(evidenceItem))
-      : emptyState("Достижений пока нет. Добавьте вручную или импортируйте оценки из CSV."),
+      : emptyState(isStudent ? "Достижений пока нет. Добавьте проект, конкурс, практику или сертификат." : "Достижений пока нет. Добавьте вручную или импортируйте оценки из CSV."),
   ]);
 }
 
